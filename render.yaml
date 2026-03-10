@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: plan-your-yard
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: node backend/dist/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: ANTHROPIC_API_KEY
+        sync: false   # User must set this in the Render dashboard
+    healthCheckPath: /api/health
+    autoDeploy: true
