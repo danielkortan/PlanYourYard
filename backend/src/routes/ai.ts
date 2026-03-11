@@ -191,6 +191,119 @@ Make this description vivid and specific enough that the homeowner can clearly p
   }
 });
 
+// Street view simulation - text-only, no image required
+router.post('/streetview', async (req: Request, res: Response) => {
+  const { plants, address, viewType } = req.body as {
+    plants: Array<{
+      commonName: string;
+      scientificName: string;
+      yearPlanted: number;
+      heightPlanted: number;
+      currentEstimatedHeight: number;
+      currentEstimatedSpread: number;
+      growthRate: string;
+      type: string;
+      zoneName: string;
+    }>;
+    address?: string;
+    viewType: 'aerial' | 'street';
+  };
+
+  if (!plants || plants.length === 0) {
+    return res.status(400).json({ error: 'No plant data provided' });
+  }
+
+  const currentYear = new Date().getFullYear();
+
+  const plantList = plants.map(p => {
+    const age = currentYear - p.yearPlanted;
+    return `- ${p.commonName} (${p.scientificName}): planted ${age} year${age !== 1 ? 's' : ''} ago at ${p.heightPlanted}ft, now estimated ${p.currentEstimatedHeight}ft tall × ${p.currentEstimatedSpread}ft wide (${p.growthRate} growth rate, ${p.type}, in "${p.zoneName}" zone)`;
+  }).join('\n');
+
+  const viewPrompt = viewType === 'street'
+    ? `Describe in vivid detail what a visitor sees when arriving at this property from the street. Walk them from the curb up to the front door. Describe how tall each plant appears relative to a person or the house, how they frame the entrance, seasonal colors and textures, and the overall curb appeal and naturalistic feel of the landscape.`
+    : `Describe the property as seen from directly above (aerial/bird's eye view). Explain the layout of plantings, how the green canopy areas look from above, the circular spread of each plant relative to lawn areas, and how the plant placement creates a cohesive garden design.`;
+
+  const prompt = `You are a professional landscape architect providing a vivid ${viewType === 'street' ? 'street-level' : 'aerial'} visualization of a property's landscape based on plant data.
+
+Property: ${address || 'Residential property'}
+Current year: ${currentYear}
+
+Plants in the landscape:
+${plantList}
+
+${viewPrompt}
+
+Also include:
+- **Seasonal Highlights**: What this yard looks like in each season
+- **Wildlife Activity**: What birds, butterflies, and pollinators you'd expect to see
+- **Overall Landscape Character**: The feel and aesthetic of this planting plan
+
+Make the description specific, vivid, and inspirational so the homeowner can truly picture their future yard.`;
+
+  try {
+    const client = getClient();
+    const response = await client.messages.create({
+      model: 'claude-opus-4-6',
+      max_tokens: 1500,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const textContent = response.content.find(c => c.type === 'text');
+    res.json({
+      visualization: textContent?.type === 'text' ? textContent.text : '',
+      viewType,
+      usage: response.usage,
+    });
+  } catch (error: any) {
+    if (error.message === 'ANTHROPIC_API_KEY not configured') {
+      return res.status(503).json({
+        error: 'AI service not configured',
+        demo: true,
+        visualization: generateDemoStreetView(plants, viewType, currentYear, address),
+      });
+    }
+    console.error('AI streetview error:', error);
+    res.status(500).json({ error: 'Street view generation failed', details: error.message });
+  }
+});
+
+function generateDemoStreetView(
+  plants: Array<{ commonName: string; currentEstimatedHeight: number; currentEstimatedSpread: number; yearPlanted: number; zoneName: string }>,
+  viewType: string,
+  currentYear: number,
+  address?: string
+): string {
+  const tallest = plants.reduce((a, b) => a.currentEstimatedHeight > b.currentEstimatedHeight ? a : b, plants[0]);
+  return `## Demo Mode – ${viewType === 'street' ? 'Street-Level' : 'Aerial'} Visualization
+
+**Note**: This is a demo response. Add your ANTHROPIC_API_KEY to enable real AI visualization.
+
+### Your Landscape at a Glance (${currentYear})
+
+You have **${plants.length} plant${plants.length !== 1 ? 's' : ''}** established in your landscape${address ? ` at ${address}` : ''}.
+
+${viewType === 'street' ? `
+**From the Street**
+As you approach the property, the most prominent feature is the ${tallest.commonName}, now standing approximately ${tallest.currentEstimatedHeight} feet tall. The naturalistic plantings create a welcoming, layered look that stands out from typical turf-only lawns.
+
+**Seasonal Highlights**
+- **Spring**: Fresh foliage emerges alongside any early bloomers
+- **Summer**: Full leafy canopy provides shade and texture
+- **Fall**: Rich color display from foliage and seed heads
+- **Winter**: Architectural structure and winter interest for birds
+` : `
+**From Above**
+The aerial view reveals a thoughtful arrangement of plantings across the property. Green canopy circles dot the landscape, with the ${tallest.commonName} creating the largest overhead coverage at roughly ${tallest.currentEstimatedSpread} feet across.
+`}
+
+**Wildlife Potential**
+With these native plants, expect visits from butterflies, native bees, and songbirds throughout the growing season. The layered planting structure provides nesting and foraging habitat.
+
+**Overall Character**
+This landscape showcases the beauty of native plantings — low maintenance, ecologically valuable, and seasonally dynamic.`;
+}
+
 function generateDemoAnalysis(plantName?: string, location?: string): string {
   if (plantName) {
     return `## Demo Mode - AI Analysis

@@ -77,6 +77,8 @@ export interface PlacedPlant {
   scientificName: string;
   position: [number, number];
   plantedDate?: string;
+  yearPlanted?: number;
+  heightPlanted?: number; // feet at time of planting
   notes?: string;
 }
 
