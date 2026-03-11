@@ -12,13 +12,24 @@ router.get('/search', (req: Request, res: Response) => {
   let results = [...nativePlantsData];
 
   if (q) {
-    const query = q.toLowerCase();
-    results = results.filter(p =>
-      p.commonName.toLowerCase().includes(query) ||
-      p.scientificName.toLowerCase().includes(query) ||
-      p.family.toLowerCase().includes(query) ||
-      p.description.toLowerCase().includes(query)
-    );
+    // Split into individual words so "oak tree" or "blue grass" each match independently
+    const words = q.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    results = results.filter(p => {
+      const searchText = [
+        p.commonName,
+        p.scientificName,
+        p.family,
+        p.type,
+        p.description,
+        p.waterRequirements,
+        ...p.sunRequirements,
+        ...p.features,
+        ...p.landscapeUses,
+        ...p.nativeRange,
+        ...p.bloomColor,
+      ].join(' ').toLowerCase();
+      return words.every(word => searchText.includes(word));
+    });
   }
 
   if (type) {

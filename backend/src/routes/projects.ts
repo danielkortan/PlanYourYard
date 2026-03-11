@@ -34,12 +34,12 @@ router.get('/', requireAuth, (req: AuthRequest, res: Response) => {
 
 // POST /api/projects
 router.post('/', requireAuth, (req: AuthRequest, res: Response) => {
-  const { name, address, lat, lng, description } = req.body;
+  const { name, address, lat, lng, zoom, description } = req.body;
   if (!name) { res.status(400).json({ error: 'Project name is required' }); return; }
 
   const result = db.prepare(
-    'INSERT INTO projects (user_id, name, address, lat, lng, description) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(req.user!.id, name, address || '', lat || null, lng || null, description || '');
+    'INSERT INTO projects (user_id, name, address, lat, lng, zoom, description) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(req.user!.id, name, address || '', lat || null, lng || null, zoom || 17, description || '');
 
   res.status(201).json(db.prepare('SELECT * FROM projects WHERE id = ?').get(result.lastInsertRowid));
 });
@@ -55,7 +55,9 @@ router.get('/:id', requireAuth, (req: AuthRequest, res: Response) => {
     markers: db.prepare('SELECT * FROM plant_markers WHERE image_id = ? ORDER BY created_at ASC').all(img.id),
   }));
 
-  res.json({ ...project, images: imagesWithMarkers });
+  const aerialMarkers = db.prepare('SELECT * FROM aerial_markers WHERE project_id = ? ORDER BY created_at ASC').all(project.id);
+
+  res.json({ ...project, images: imagesWithMarkers, aerialMarkers });
 });
 
 // PUT /api/projects/:id
@@ -63,9 +65,9 @@ router.put('/:id', requireAuth, (req: AuthRequest, res: Response) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.id);
   if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
 
-  const { name, address, lat, lng, description } = req.body;
-  db.prepare('UPDATE projects SET name = ?, address = ?, lat = ?, lng = ?, description = ? WHERE id = ?').run(
-    name, address, lat || null, lng || null, description, req.params.id
+  const { name, address, lat, lng, zoom, description } = req.body;
+  db.prepare('UPDATE projects SET name = ?, address = ?, lat = ?, lng = ?, zoom = ?, description = ? WHERE id = ?').run(
+    name, address, lat || null, lng || null, zoom || 17, description, req.params.id
   );
   res.json(db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id));
 });
@@ -139,6 +141,35 @@ router.delete('/:id/images/:imageId/markers/:markerId', requireAuth, (req: AuthR
   if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
 
   db.prepare('DELETE FROM plant_markers WHERE id = ? AND image_id = ?').run(req.params.markerId, req.params.imageId);
+  res.json({ success: true });
+});
+
+// ── Aerial markers (map-based) ─────────────────────────────────────────────
+
+// POST /api/projects/:id/aerial-markers
+router.post('/:id/aerial-markers', requireAuth, (req: AuthRequest, res: Response) => {
+  const project = db.prepare('SELECT * FROM projects WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.id);
+  if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
+
+  const { plant_id, plant_name, lat, lng, notes } = req.body;
+  if (!plant_id || !plant_name || lat == null || lng == null) {
+    res.status(400).json({ error: 'plant_id, plant_name, lat, lng are required' });
+    return;
+  }
+
+  const result = db.prepare(
+    'INSERT INTO aerial_markers (project_id, plant_id, plant_name, lat, lng, notes) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(req.params.id, plant_id, plant_name, lat, lng, notes || '');
+
+  res.status(201).json(db.prepare('SELECT * FROM aerial_markers WHERE id = ?').get(result.lastInsertRowid));
+});
+
+// DELETE /api/projects/:id/aerial-markers/:markerId
+router.delete('/:id/aerial-markers/:markerId', requireAuth, (req: AuthRequest, res: Response) => {
+  const project = db.prepare('SELECT * FROM projects WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.id);
+  if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
+
+  db.prepare('DELETE FROM aerial_markers WHERE id = ? AND project_id = ?').run(req.params.markerId, req.params.id);
   res.json({ success: true });
 });
 

@@ -48,7 +48,21 @@ db.exec(`
     notes TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS aerial_markers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    plant_id TEXT NOT NULL,
+    plant_name TEXT NOT NULL,
+    lat REAL NOT NULL,
+    lng REAL NOT NULL,
+    notes TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
+
+// Safe column migrations (no-op if column already exists)
+try { db.exec('ALTER TABLE projects ADD COLUMN zoom INTEGER DEFAULT 17'); } catch {}
 
 function seedAdmin() {
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@planyouryard.com';
