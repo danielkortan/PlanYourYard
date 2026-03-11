@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Upload, Trash2, Plus, X, Search, MapPin, Leaf,
   Satellite, Image as ImageIcon, Sun, Cloud, Moon, Ruler,
-  Map as MapIcon, Layers, PenLine, Undo2, Check, ZoomIn, Save
+  Map as MapIcon, Layers, PenLine, Undo2, Check, ZoomIn, Save,
+  RotateCw, Scissors,
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Polygon, Polyline, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -138,11 +139,43 @@ function dotIcon(color: string, size = 10) {
   });
 }
 
-// Captures the Leaflet map instance into a ref
-function MapRefCapture({ mapRef }: { mapRef: React.MutableRefObject<L.Map | null> }) {
+// Captures the Leaflet map instance into a ref and notifies parent
+function MapRefCapture({
+  mapRef,
+  onMount,
+}: {
+  mapRef: React.MutableRefObject<L.Map | null>;
+  onMount?: (map: L.Map) => void;
+}) {
   const map = useMap();
-  useEffect(() => { mapRef.current = map; }, [map]);
+  useEffect(() => {
+    mapRef.current = map;
+    onMount?.(map);
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   return null;
+}
+
+// Compass rose — the red arrow always points true north regardless of rotation
+function CompassRose({ rotation }: { rotation: number }) {
+  const arrowAngle = -rotation;
+  return (
+    <div
+      className="w-14 h-14 bg-white/95 backdrop-blur-sm rounded-full shadow-lg border border-gray-200 flex items-center justify-center"
+      title={`Map rotated ${rotation}° — north is ${rotation === 0 ? 'up' : `${rotation}° clockwise from up`}`}
+    >
+      <svg viewBox="0 0 56 56" className="w-12 h-12">
+        <g transform={`rotate(${arrowAngle}, 28, 28)`}>
+          <polygon points="28,6 24,28 28,24 32,28" fill="#ef4444" />
+          <polygon points="28,50 24,28 28,32 32,28" fill="#9ca3af" />
+          <circle cx="28" cy="28" r="3" fill="#1f2937" />
+          <text x="28" y="17" textAnchor="middle" dominantBaseline="middle" fontSize="7" fontWeight="bold" fill="white">N</text>
+        </g>
+        {[0, 90, 180, 270].map(a => (
+          <line key={a} x1="28" y1="1" x2="28" y2="5" stroke="#d1d5db" strokeWidth="1.5" transform={`rotate(${a}, 28, 28)`} />
+        ))}
+      </svg>
+    </div>
+  );
 }
 
 // Handles clicks for either plant placement or border drawing
@@ -391,7 +424,13 @@ export default function ProjectDetailPage() {
   const [savedBorder, setSavedBorder]     = useState<[number, number][] | null>(null);
   const [savingBorder, setSavingBorder]   = useState(false);
   const [savingZoom, setSavingZoom]       = useState(false);
-  const mapRef = useRef<L.Map | null>(null);
+  const mapRef        = useRef<L.Map | null>(null);
+  const mapWrapperRef = useRef<HTMLDivElement>(null);
+
+  // Clip view state
+  const [clipMode, setClipMode]   = useState(false);
+  const [rotation, setRotation]   = useState(0);
+  const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
 
   // Photo tab state
   const [activeImageId, setActiveImageId] = useState<number | null>(null);
@@ -408,12 +447,47 @@ export default function ProjectDetailPage() {
         if (!p.lat || !p.lng) setTab('photos');
         if (p.images.length > 0) setActiveImageId(p.images[0].id);
         if (p.property_border) {
-          try { setSavedBorder(JSON.parse(p.property_border)); } catch {}
+          try {
+            setSavedBorder(JSON.parse(p.property_border));
+            setClipMode(true);
+          } catch {}
         }
       })
       .catch(() => { toast.error('Project not found'); navigate('/projects'); })
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Apply / remove CSS clip-path on every map move/zoom while clip mode is on
+  useEffect(() => {
+    const wrapper = mapWrapperRef.current;
+    if (!mapInstance || !wrapper || !savedBorder || savedBorder.length < 3 || !clipMode) {
+      if (wrapper) wrapper.style.clipPath = '';
+      return;
+    }
+
+    const update = () => {
+      if (!mapWrapperRef.current) return;
+      const pts = savedBorder.map(([lat, lng]) => {
+        const p = mapInstance.latLngToContainerPoint(L.latLng(lat, lng));
+        return `${p.x}px ${p.y}px`;
+      });
+      mapWrapperRef.current.style.clipPath = `polygon(${pts.join(', ')})`;
+    };
+
+    update();
+    mapInstance.on('move zoom resize viewreset moveend zoomend', update);
+    return () => {
+      mapInstance.off('move zoom resize viewreset moveend zoomend', update);
+      if (mapWrapperRef.current) mapWrapperRef.current.style.clipPath = '';
+    };
+  }, [mapInstance, savedBorder, clipMode]);
+
+  // When the map first becomes available and clip mode is on, fit to property bounds
+  useEffect(() => {
+    if (!mapInstance || !savedBorder || savedBorder.length < 3) return;
+    const bounds = L.latLngBounds(savedBorder.map(([lat, lng]) => L.latLng(lat, lng)));
+    mapInstance.fitBounds(bounds, { padding: [60, 60] });
+  }, [mapInstance]); // only on first map mount
 
   const activeImage = project?.images.find(img => img.id === activeImageId) ?? null;
 
@@ -443,7 +517,14 @@ export default function ProjectDetailPage() {
       setProject(prev => prev ? { ...prev, property_border: res.data.property_border } : prev);
       setMapMode('place');
       setBorderPoints([]);
-      toast.success('Property border saved!');
+      setClipMode(true);
+      setRotation(0);
+      // Fit map to property bounds
+      if (mapRef.current) {
+        const bounds = L.latLngBounds(borderPoints.map(([lat, lng]) => L.latLng(lat, lng)));
+        mapRef.current.fitBounds(bounds, { padding: [60, 60] });
+      }
+      toast.success('Property border saved! Clip view enabled.');
     } catch { toast.error('Failed to save border'); }
     finally { setSavingBorder(false); }
   };
@@ -457,6 +538,8 @@ export default function ProjectDetailPage() {
         zoom: p.zoom, description: p.description, property_border: null,
       });
       setSavedBorder(null);
+      setClipMode(false);
+      setRotation(0);
       setProject(prev => prev ? { ...prev, property_border: null } : prev);
       toast.success('Border cleared');
     } catch { toast.error('Failed to clear border'); }
@@ -629,10 +712,32 @@ export default function ProjectDetailPage() {
                     {savedBorder ? 'Redraw Border' : 'Draw Property Border'}
                   </button>
                   {savedBorder && (
-                    <button onClick={clearBorder}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 hover:border-red-400 rounded-lg text-xs font-medium text-gray-500 hover:text-red-600 transition-colors">
-                      <X className="w-3.5 h-3.5" /> Clear Border
-                    </button>
+                    <>
+                      <button onClick={clearBorder}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 hover:border-red-400 rounded-lg text-xs font-medium text-gray-500 hover:text-red-600 transition-colors">
+                        <X className="w-3.5 h-3.5" /> Clear Border
+                      </button>
+                      <button
+                        onClick={() => {
+                          setClipMode(v => {
+                            if (!v && mapRef.current && savedBorder) {
+                              const bounds = L.latLngBounds(savedBorder.map(([lat, lng]) => L.latLng(lat, lng)));
+                              mapRef.current.fitBounds(bounds, { padding: [60, 60] });
+                            }
+                            return !v;
+                          });
+                          setRotation(0);
+                        }}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                          clipMode
+                            ? 'bg-forest-600 text-white border-forest-600'
+                            : 'bg-white text-gray-700 border-gray-200 hover:border-forest-400'
+                        }`}
+                      >
+                        <Scissors className="w-3.5 h-3.5" />
+                        {clipMode ? 'Exit Clip View' : 'Clip to Property'}
+                      </button>
+                    </>
                   )}
                 </>
               ) : (
@@ -677,85 +782,136 @@ export default function ProjectDetailPage() {
               </span>
             </div>
 
-            {/* Map — with layer toggle overlaid on left side */}
-            <div className={`relative rounded-xl overflow-hidden border border-gray-200 ${isDrawing ? 'ring-2 ring-forest-400' : ''}`} style={{ height: 720 }}>
-
-              {/* Layer toggle — vertical pill buttons overlaid on map left */}
-              <div className="absolute top-3 left-3 z-[1000] flex flex-col gap-1 bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-1.5 border border-gray-200">
-                <button onClick={() => setMapLayer('satellite')}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${mapLayer === 'satellite' ? 'bg-gray-900 text-white shadow' : 'text-gray-600 hover:bg-gray-100'}`}>
-                  <Satellite className="w-3.5 h-3.5" /> Satellite
-                </button>
-                <button onClick={() => setMapLayer('street')}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${mapLayer === 'street' ? 'bg-gray-900 text-white shadow' : 'text-gray-600 hover:bg-gray-100'}`}>
-                  <MapIcon className="w-3.5 h-3.5" /> Map
-                </button>
-                <button onClick={() => setMapLayer('hybrid')}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${mapLayer === 'hybrid' ? 'bg-gray-900 text-white shadow' : 'text-gray-600 hover:bg-gray-100'}`}>
-                  <Layers className="w-3.5 h-3.5" /> Hybrid
-                </button>
-              </div>
-
-              <MapContainer
-                key={project.id}
-                center={[project.lat!, project.lng!]}
-                zoom={project.zoom || 19}
-                maxZoom={22}
-                style={{ height: '100%', width: '100%' }}
-                zoomControl={true}
+            {/* Map — outer container: neutral dot-grid bg when clip mode is on */}
+            <div
+              className={`relative ${isDrawing ? 'ring-2 ring-forest-400 rounded-xl' : ''} ${!clipMode ? 'rounded-xl overflow-hidden border border-gray-200' : ''}`}
+              style={{
+                height: 720,
+                ...(clipMode ? {
+                  backgroundColor: '#e2e8f0',
+                  backgroundImage: 'radial-gradient(circle, #94a3b8 1.5px, transparent 1.5px)',
+                  backgroundSize: '22px 22px',
+                  borderRadius: '12px',
+                  overflow: 'hidden',
+                } : {}),
+              }}
+            >
+              {/* Map wrapper — receives CSS clip-path + rotation in clip mode */}
+              <div
+                ref={mapWrapperRef}
+                className="w-full h-full"
+                style={{
+                  transform: clipMode ? `rotate(${rotation}deg)` : 'none',
+                  transformOrigin: 'center',
+                  transition: 'transform 0.2s ease',
+                  willChange: clipMode ? 'transform, clip-path' : 'auto',
+                }}
               >
-                {/* Base tile layer */}
-                <TileLayer
-                  key={mapLayer}
-                  url={tileConfig.url}
-                  attribution={tileConfig.attribution}
-                  maxNativeZoom={20}
+                {/* Layer toggle — vertical pill buttons overlaid on map left */}
+                <div className="absolute top-3 left-3 z-[1000] flex flex-col gap-1 bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-1.5 border border-gray-200">
+                  <button onClick={() => setMapLayer('satellite')}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${mapLayer === 'satellite' ? 'bg-gray-900 text-white shadow' : 'text-gray-600 hover:bg-gray-100'}`}>
+                    <Satellite className="w-3.5 h-3.5" /> Satellite
+                  </button>
+                  <button onClick={() => setMapLayer('street')}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${mapLayer === 'street' ? 'bg-gray-900 text-white shadow' : 'text-gray-600 hover:bg-gray-100'}`}>
+                    <MapIcon className="w-3.5 h-3.5" /> Map
+                  </button>
+                  <button onClick={() => setMapLayer('hybrid')}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${mapLayer === 'hybrid' ? 'bg-gray-900 text-white shadow' : 'text-gray-600 hover:bg-gray-100'}`}>
+                    <Layers className="w-3.5 h-3.5" /> Hybrid
+                  </button>
+                </div>
+
+                <MapContainer
+                  key={project.id}
+                  center={[project.lat!, project.lng!]}
+                  zoom={project.zoom || 19}
                   maxZoom={22}
-                />
-                {/* Hybrid overlay: transparent labels/roads/boundaries on top of imagery */}
-                {mapLayer === 'hybrid' && tileConfig.overlay && (
+                  style={{ height: '100%', width: '100%' }}
+                  zoomControl={true}
+                >
                   <TileLayer
-                    url={tileConfig.overlay}
-                    attribution=""
+                    key={mapLayer}
+                    url={tileConfig.url}
+                    attribution={tileConfig.attribution}
                     maxNativeZoom={20}
                     maxZoom={22}
-                    opacity={1}
                   />
-                )}
+                  {mapLayer === 'hybrid' && tileConfig.overlay && (
+                    <TileLayer url={tileConfig.overlay} attribution="" maxNativeZoom={20} maxZoom={22} opacity={1} />
+                  )}
 
-                <MapRefCapture mapRef={mapRef} />
-                <MapClickHandler mode={mapMode} onPlace={handleMapClick} onBorder={handleBorderClick} />
+                  <MapRefCapture mapRef={mapRef} onMount={setMapInstance} />
+                  <MapClickHandler mode={mapMode} onPlace={handleMapClick} onBorder={handleBorderClick} />
 
-                {/* Saved property border */}
-                {savedBorder && savedBorder.length >= 3 && !isDrawing && (
-                  <Polygon
-                    positions={savedBorder}
-                    pathOptions={{ color: '#16a34a', fillColor: '#22c55e', fillOpacity: 0.1, weight: 2.5, dashArray: '6 4' }}
+                  {/* Property border — shown as polygon only when NOT in clip mode */}
+                  {savedBorder && savedBorder.length >= 3 && !isDrawing && !clipMode && (
+                    <Polygon
+                      positions={savedBorder}
+                      pathOptions={{ color: '#16a34a', fillColor: '#22c55e', fillOpacity: 0.1, weight: 2.5, dashArray: '6 4' }}
+                    />
+                  )}
+
+                  {/* In-progress border drawing */}
+                  {isDrawing && borderPoints.length >= 2 && (
+                    <Polyline positions={borderPoints} pathOptions={{ color: '#16a34a', weight: 2.5, dashArray: '6 4' }} />
+                  )}
+                  {isDrawing && borderPoints.map((pt, i) => (
+                    <Marker key={i} position={pt} icon={dotIcon(i === 0 ? '#16a34a' : '#22c55e', i === 0 ? 12 : 8)} />
+                  ))}
+
+                  {pendingAerialClick && (
+                    <Marker position={[pendingAerialClick.lat, pendingAerialClick.lng]}
+                      icon={L.divIcon({
+                        html: '<div style="width:18px;height:18px;background:#facc15;border-radius:50%;border:2px solid white;box-shadow:0 0 0 3px rgba(250,204,21,0.4)"></div>',
+                        className: '', iconSize: [18, 18], iconAnchor: [9, 9],
+                      })} />
+                  )}
+
+                  {project.aerialMarkers.map((m, idx) => (
+                    <Marker key={m.id} position={[m.lat, m.lng]} icon={leafIcon(idx)} />
+                  ))}
+                </MapContainer>
+              </div>
+
+              {/* ── Clip mode overlays (outside the rotating wrapper) ── */}
+
+              {/* Compass — always points north */}
+              {clipMode && (
+                <div className="absolute top-4 right-4 z-[1001] pointer-events-none">
+                  <CompassRose rotation={rotation} />
+                </div>
+              )}
+
+              {/* Rotation controls */}
+              {clipMode && (
+                <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[1001] flex items-center gap-3 bg-white/95 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-200 px-4 py-2.5">
+                  <RotateCw className="w-4 h-4 text-gray-400 shrink-0" />
+                  <input
+                    type="range"
+                    min={0} max={359} value={rotation}
+                    onChange={e => setRotation(parseInt(e.target.value))}
+                    className="w-36 accent-forest-600"
                   />
-                )}
-
-                {/* In-progress border drawing */}
-                {isDrawing && borderPoints.length >= 2 && (
-                  <Polyline positions={borderPoints} pathOptions={{ color: '#16a34a', weight: 2.5, dashArray: '6 4' }} />
-                )}
-                {isDrawing && borderPoints.map((pt, i) => (
-                  <Marker key={i} position={pt} icon={dotIcon(i === 0 ? '#16a34a' : '#22c55e', i === 0 ? 12 : 8)} />
-                ))}
-
-                {/* Pending plant-placement click */}
-                {pendingAerialClick && (
-                  <Marker position={[pendingAerialClick.lat, pendingAerialClick.lng]}
-                    icon={L.divIcon({
-                      html: '<div style="width:18px;height:18px;background:#facc15;border-radius:50%;border:2px solid white;box-shadow:0 0 0 3px rgba(250,204,21,0.4)"></div>',
-                      className: '', iconSize: [18, 18], iconAnchor: [9, 9],
-                    })} />
-                )}
-
-                {/* Placed aerial plant markers */}
-                {project.aerialMarkers.map((m, idx) => (
-                  <Marker key={m.id} position={[m.lat, m.lng]} icon={leafIcon(idx)} />
-                ))}
-              </MapContainer>
+                  <span className="text-xs font-mono text-gray-600 w-9 text-right">{rotation}°</span>
+                  <div className="w-px h-5 bg-gray-200" />
+                  {[
+                    { deg: 0, label: 'N↑' },
+                    { deg: 90, label: 'E↑' },
+                    { deg: 180, label: 'S↑' },
+                    { deg: 270, label: 'W↑' },
+                  ].map(({ deg, label }) => (
+                    <button
+                      key={deg}
+                      onClick={() => setRotation(deg)}
+                      className={`text-xs px-2 py-1 rounded-lg font-medium transition-colors ${rotation === deg ? 'bg-forest-600 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
