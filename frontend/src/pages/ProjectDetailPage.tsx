@@ -109,7 +109,8 @@ const TILE_LAYERS: Record<MapLayer, { url: string; attribution: string; overlay?
   hybrid: {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     attribution: 'Esri, Maxar, © OpenStreetMap contributors',
-    overlay: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+    // World_Reference_Overlay = transparent labels/roads/boundaries designed for satellite base
+    overlay: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Reference_Overlay/MapServer/tile/{z}/{y}/{x}',
   },
 };
 
@@ -159,23 +160,60 @@ interface PlantPickerProps {
   onCancel: () => void;
 }
 
+// iNaturalist result mapped to PlantResult shape
+function inatToPlantResult(taxon: any): PlantResult {
+  return {
+    id: `inat-${taxon.id}`,
+    commonName: taxon.preferred_common_name || taxon.english_common_name || taxon.name,
+    scientificName: taxon.name,
+    type: 'tree',           // iNat doesn't provide type — default
+    sunRequirements: [],
+    height: { min: 0, max: 0 },
+    waterRequirements: '',
+    bloomColor: [],
+  };
+}
+
 function PlantPicker({ onPlace, onCancel }: PlantPickerProps) {
-  const [query, setQuery]       = useState('');
-  const [results, setResults]   = useState<PlantResult[]>([]);
-  const [selected, setSelected] = useState<PlantResult | null>(null);
-  const [notes, setNotes]       = useState('');
+  const [query, setQuery]         = useState('');
+  const [results, setResults]     = useState<PlantResult[]>([]);
+  const [inatResults, setInatResults] = useState<PlantResult[]>([]);
+  const [selected, setSelected]   = useState<PlantResult | null>(null);
+  const [notes, setNotes]         = useState('');
   const [searching, setSearching] = useState(false);
-  const [placing, setPlacing]   = useState(false);
+  const [placing, setPlacing]     = useState(false);
+  const [showManual, setShowManual] = useState(false);
+  const [manualName, setManualName] = useState('');
+  const [manualType, setManualType] = useState('tree');
 
   useEffect(() => {
-    if (!query.trim()) { setResults([]); return; }
-    const t = setTimeout(() => {
+    if (!query.trim()) { setResults([]); setInatResults([]); return; }
+    const t = setTimeout(async () => {
       setSearching(true);
-      axios.get('/api/plants/search', { params: { q: query, limit: 8 } })
-        .then(r => setResults(r.data.results || []))
-        .catch(() => {})
-        .finally(() => setSearching(false));
-    }, 250);
+      try {
+        const local = await axios.get('/api/plants/search', { params: { q: query, limit: 10 } });
+        const localList: PlantResult[] = local.data.results || [];
+        setResults(localList);
+        // If fewer than 4 local results, also query iNaturalist for broader matches
+        if (localList.length < 4) {
+          try {
+            const inat = await axios.get('/api/plants/inaturalist/search', { params: { q: query } });
+            const taxa: any[] = inat.data.results || [];
+            // Exclude any that already appear in local results
+            const localIds = new Set(localList.map(p => p.scientificName.toLowerCase()));
+            const extra = taxa
+              .filter(t => t.preferred_common_name || t.english_common_name)
+              .filter(t => !localIds.has(t.name.toLowerCase()))
+              .slice(0, 8)
+              .map(inatToPlantResult);
+            setInatResults(extra);
+          } catch { /* iNat unavailable — silently skip */ }
+        } else {
+          setInatResults([]);
+        }
+      } catch { /* local search failed */ }
+      finally { setSearching(false); }
+    }, 300);
     return () => clearTimeout(t);
   }, [query]);
 
@@ -185,6 +223,28 @@ function PlantPicker({ onPlace, onCancel }: PlantPickerProps) {
     try { await onPlace(selected, notes); }
     finally { setPlacing(false); }
   };
+
+  const selectCustom = () => {
+    if (!manualName.trim()) return;
+    const plant: PlantResult = {
+      id: `custom-${Date.now()}`,
+      commonName: manualName.trim(),
+      scientificName: '',
+      type: manualType as any,
+      sunRequirements: [],
+      height: { min: 0, max: 0 },
+      waterRequirements: '',
+      bloomColor: [],
+    };
+    setSelected(plant);
+    setQuery(plant.commonName);
+    setShowManual(false);
+    setResults([]);
+    setInatResults([]);
+  };
+
+  const allResults = [...results, ...inatResults];
+  const showNoResults = query.trim() && !searching && allResults.length === 0 && !selected;
 
   return (
     <div className="bg-white border border-forest-300 rounded-xl p-4 shadow-sm">
@@ -199,36 +259,91 @@ function PlantPicker({ onPlace, onCancel }: PlantPickerProps) {
         <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
         <input
           type="text" value={query} autoFocus
-          onChange={e => { setQuery(e.target.value); setSelected(null); }}
-          placeholder="Search plants… (e.g. oak, fern)"
+          onChange={e => { setQuery(e.target.value); setSelected(null); setShowManual(false); }}
+          placeholder="Search plants… (e.g. rose, boxwood, oak)"
           className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-forest-500"
         />
       </div>
 
       {searching && <p className="text-xs text-gray-400 mb-2">Searching…</p>}
 
-      {results.length > 0 && !selected && (
-        <div className="border border-gray-200 rounded-lg overflow-hidden mb-3 max-h-60 overflow-y-auto divide-y divide-gray-100">
+      {allResults.length > 0 && !selected && (
+        <div className="border border-gray-200 rounded-lg overflow-hidden mb-3 max-h-64 overflow-y-auto divide-y divide-gray-100">
           {results.map(plant => (
-            <button key={plant.id} onClick={() => { setSelected(plant); setQuery(plant.commonName); setResults([]); }}
+            <button key={plant.id} onClick={() => { setSelected(plant); setQuery(plant.commonName); setResults([]); setInatResults([]); }}
               className="w-full text-left px-3 py-2.5 hover:bg-forest-50 transition-colors">
               <div className="flex items-center gap-2 mb-0.5">
                 <span className="text-sm font-semibold text-gray-900">{plant.commonName}</span>
                 <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${TYPE_COLORS[plant.type] || 'bg-gray-100 text-gray-600'}`}>{plant.type}</span>
               </div>
-              <div className="text-xs text-gray-400 italic mb-1">{plant.scientificName}</div>
+              {plant.scientificName && <div className="text-xs text-gray-400 italic mb-1">{plant.scientificName}</div>}
               <div className="flex flex-wrap gap-3">
                 {plant.sunRequirements.slice(0, 2).map(s => <SunBadge key={s} req={s} />)}
-                <span className="flex items-center gap-0.5 text-xs text-gray-500"><Ruler className="w-3 h-3" />up to {plant.height.max} ft</span>
+                {plant.height.max > 0 && <span className="flex items-center gap-0.5 text-xs text-gray-500"><Ruler className="w-3 h-3" />up to {plant.height.max} ft</span>}
                 {plant.waterRequirements && <span className="text-xs text-blue-500">💧 {plant.waterRequirements}</span>}
               </div>
             </button>
           ))}
+          {inatResults.length > 0 && (
+            <>
+              <div className="px-3 py-1.5 bg-gray-50 text-xs text-gray-400 font-medium sticky top-0">More results (iNaturalist)</div>
+              {inatResults.map(plant => (
+                <button key={plant.id} onClick={() => { setSelected(plant); setQuery(plant.commonName); setResults([]); setInatResults([]); }}
+                  className="w-full text-left px-3 py-2.5 hover:bg-forest-50 transition-colors">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-sm font-semibold text-gray-900">{plant.commonName}</span>
+                    <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-blue-50 text-blue-600">iNat</span>
+                  </div>
+                  {plant.scientificName && <div className="text-xs text-gray-400 italic">{plant.scientificName}</div>}
+                </button>
+              ))}
+            </>
+          )}
         </div>
       )}
 
-      {query.trim() && !searching && results.length === 0 && !selected && (
-        <p className="text-xs text-gray-400 mb-3">No plants found. Try "oak", "maple", or "fern".</p>
+      {showNoResults && !showManual && (
+        <div className="mb-3">
+          <p className="text-xs text-gray-400 mb-2">No plants found for "{query}".</p>
+          <button onClick={() => { setShowManual(true); setManualName(query); }}
+            className="text-xs text-forest-600 hover:text-forest-800 font-medium flex items-center gap-1">
+            <Plus className="w-3.5 h-3.5" /> Add "{query}" as a custom plant
+          </button>
+        </div>
+      )}
+
+      {/* Manual entry form */}
+      {showManual && (
+        <div className="border border-dashed border-forest-300 rounded-lg p-3 mb-3 bg-forest-50/50">
+          <p className="text-xs font-medium text-forest-800 mb-2">Custom plant entry</p>
+          <input type="text" value={manualName} onChange={e => setManualName(e.target.value)}
+            placeholder="Plant name"
+            className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-forest-500" />
+          <select value={manualType} onChange={e => setManualType(e.target.value)}
+            className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-forest-500">
+            {['tree','shrub','perennial','annual','grass','fern','vine','groundcover'].map(t => (
+              <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+            ))}
+          </select>
+          <div className="flex gap-2">
+            <button onClick={selectCustom} disabled={!manualName.trim()}
+              className="flex-1 bg-forest-600 hover:bg-forest-700 disabled:opacity-50 text-white py-1.5 rounded-lg text-xs font-medium transition-colors">
+              Use This Plant
+            </button>
+            <button onClick={() => setShowManual(false)}
+              className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-500 hover:text-gray-700 transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Always-visible "add custom" link when there are results but plant not found */}
+      {allResults.length > 0 && !selected && !showManual && (
+        <button onClick={() => { setShowManual(true); setManualName(query); }}
+          className="text-xs text-gray-400 hover:text-forest-600 mb-3 block transition-colors">
+          Can't find it? Add a custom plant
+        </button>
       )}
 
       {selected && (
@@ -236,11 +351,11 @@ function PlantPicker({ onPlace, onCancel }: PlantPickerProps) {
           <div className="flex items-start justify-between gap-2">
             <div>
               <div className="font-semibold text-forest-800 text-sm">{selected.commonName}</div>
-              <div className="text-xs text-forest-600 italic">{selected.scientificName}</div>
+              {selected.scientificName && <div className="text-xs text-forest-600 italic">{selected.scientificName}</div>}
               <div className="flex gap-2 mt-1.5 flex-wrap">
                 <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${TYPE_COLORS[selected.type] || 'bg-gray-100 text-gray-600'}`}>{selected.type}</span>
                 {selected.sunRequirements.slice(0, 1).map(s => <SunBadge key={s} req={s} />)}
-                <span className="text-xs text-gray-500 flex items-center gap-0.5"><Ruler className="w-3 h-3" />{selected.height.max} ft max</span>
+                {selected.height.max > 0 && <span className="text-xs text-gray-500 flex items-center gap-0.5"><Ruler className="w-3 h-3" />{selected.height.max} ft max</span>}
               </div>
             </div>
             <button onClick={() => { setSelected(null); setQuery(''); }} className="text-gray-400 hover:text-gray-600 mt-0.5"><X className="w-3.5 h-3.5" /></button>
@@ -504,28 +619,8 @@ export default function ProjectDetailPage() {
         <div className="flex flex-col lg:flex-row gap-6">
           <div className="flex-1 min-w-0">
 
-            {/* Toolbar above map */}
+            {/* Compact toolbar: border tools + save zoom only (layer toggle moved onto map) */}
             <div className="flex flex-wrap items-center gap-2 mb-3">
-              {/* Layer toggle */}
-              <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
-                <button onClick={() => setMapLayer('satellite')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${mapLayer === 'satellite' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
-                  <Satellite className="w-3.5 h-3.5" /> Satellite
-                </button>
-                <button onClick={() => setMapLayer('street')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${mapLayer === 'street' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
-                  <MapIcon className="w-3.5 h-3.5" /> Map
-                </button>
-                <button onClick={() => setMapLayer('hybrid')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${mapLayer === 'hybrid' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
-                  <Layers className="w-3.5 h-3.5" /> Hybrid
-                </button>
-              </div>
-
-              {/* Separator */}
-              <div className="h-6 w-px bg-gray-200" />
-
-              {/* Border tools */}
               {!isDrawing ? (
                 <>
                   <button onClick={startDrawingBorder}
@@ -543,7 +638,7 @@ export default function ProjectDetailPage() {
               ) : (
                 <>
                   <span className="text-xs font-medium text-forest-700 bg-forest-50 border border-forest-200 px-3 py-1.5 rounded-lg">
-                    {borderPoints.length === 0 ? 'Click on the map to add border points…' : `${borderPoints.length} point${borderPoints.length !== 1 ? 's' : ''} — keep clicking to add more`}
+                    {borderPoints.length === 0 ? 'Click on the map to add border points…' : `${borderPoints.length} point${borderPoints.length !== 1 ? 's' : ''} — keep clicking`}
                   </span>
                   <button onClick={undoBorderPoint} disabled={borderPoints.length === 0}
                     className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-200 hover:border-gray-400 rounded-lg text-xs font-medium text-gray-600 disabled:opacity-40 transition-colors">
@@ -551,7 +646,7 @@ export default function ProjectDetailPage() {
                   </button>
                   <button onClick={finishBorder} disabled={borderPoints.length < 3 || savingBorder}
                     className="flex items-center gap-1 px-3 py-1.5 bg-forest-600 hover:bg-forest-700 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-colors">
-                    <Check className="w-3.5 h-3.5" /> {savingBorder ? 'Saving…' : 'Finish Border'}
+                    <Check className="w-3.5 h-3.5" /> {savingBorder ? 'Saving…' : 'Finish'}
                   </button>
                   <button onClick={cancelDrawing}
                     className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-200 hover:border-red-400 rounded-lg text-xs font-medium text-gray-500 hover:text-red-600 transition-colors">
@@ -560,31 +655,47 @@ export default function ProjectDetailPage() {
                 </>
               )}
 
-              {/* Separator + Save zoom */}
               <div className="h-6 w-px bg-gray-200" />
               <button onClick={saveCurrentZoom} disabled={savingZoom}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 hover:border-gray-400 rounded-lg text-xs font-medium text-gray-600 transition-colors"
-                title="Save the current zoom level so this project always opens at the right level">
+                title="Save current zoom as default for this project">
                 <Save className="w-3.5 h-3.5" />
                 {savingZoom ? 'Saving…' : 'Save Zoom'}
               </button>
+
+              {/* Status hint */}
+              <span className="text-xs text-gray-400 ml-auto">
+                {isDrawing ? (
+                  <span className="text-forest-600 font-medium flex items-center gap-1">
+                    <PenLine className="w-3.5 h-3.5" /> Drawing border
+                  </span>
+                ) : pendingAerialClick ? (
+                  <span className="text-forest-700 font-medium">Location pinned — pick a plant →</span>
+                ) : (
+                  <span className="flex items-center gap-1"><ZoomIn className="w-3.5 h-3.5" /> Click map to place plant</span>
+                )}
+              </span>
             </div>
 
-            {/* Status bar */}
-            <p className="text-xs text-gray-400 mb-2 flex items-center gap-1.5">
-              {isDrawing ? (
-                <span className="text-forest-600 font-medium flex items-center gap-1">
-                  <PenLine className="w-3.5 h-3.5" /> Border drawing mode — map clicks add points
-                </span>
-              ) : pendingAerialClick ? (
-                <span className="text-forest-700 font-medium">Location selected — choose a plant in the panel →</span>
-              ) : (
-                <><ZoomIn className="w-3.5 h-3.5" /> Click the map to place a plant · Use the toolbar to draw your property border or switch layers</>
-              )}
-            </p>
+            {/* Map — with layer toggle overlaid on left side */}
+            <div className={`relative rounded-xl overflow-hidden border border-gray-200 ${isDrawing ? 'ring-2 ring-forest-400' : ''}`} style={{ height: 720 }}>
 
-            {/* Map */}
-            <div className={`rounded-xl overflow-hidden border border-gray-200 ${isDrawing ? 'ring-2 ring-forest-400' : ''}`} style={{ height: 580 }}>
+              {/* Layer toggle — vertical pill buttons overlaid on map left */}
+              <div className="absolute top-3 left-3 z-[1000] flex flex-col gap-1 bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-1.5 border border-gray-200">
+                <button onClick={() => setMapLayer('satellite')}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${mapLayer === 'satellite' ? 'bg-gray-900 text-white shadow' : 'text-gray-600 hover:bg-gray-100'}`}>
+                  <Satellite className="w-3.5 h-3.5" /> Satellite
+                </button>
+                <button onClick={() => setMapLayer('street')}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${mapLayer === 'street' ? 'bg-gray-900 text-white shadow' : 'text-gray-600 hover:bg-gray-100'}`}>
+                  <MapIcon className="w-3.5 h-3.5" /> Map
+                </button>
+                <button onClick={() => setMapLayer('hybrid')}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${mapLayer === 'hybrid' ? 'bg-gray-900 text-white shadow' : 'text-gray-600 hover:bg-gray-100'}`}>
+                  <Layers className="w-3.5 h-3.5" /> Hybrid
+                </button>
+              </div>
+
               <MapContainer
                 key={project.id}
                 center={[project.lat!, project.lng!]}
@@ -601,14 +712,14 @@ export default function ProjectDetailPage() {
                   maxNativeZoom={20}
                   maxZoom={22}
                 />
-                {/* Hybrid overlay: labels + property lines on top of imagery */}
+                {/* Hybrid overlay: transparent labels/roads/boundaries on top of imagery */}
                 {mapLayer === 'hybrid' && tileConfig.overlay && (
                   <TileLayer
                     url={tileConfig.overlay}
                     attribution=""
                     maxNativeZoom={20}
                     maxZoom={22}
-                    opacity={0.85}
+                    opacity={1}
                   />
                 )}
 
@@ -657,9 +768,9 @@ export default function ProjectDetailPage() {
                 <p className="font-medium mb-2">Aerial Map</p>
                 <ul className="space-y-1.5 text-forest-600 text-xs">
                   <li>🌿 <strong>Place plants:</strong> click the map, search a plant</li>
-                  <li>🗺 <strong>Layers:</strong> Satellite · Map · Hybrid</li>
+                  <li>🗺 <strong>Layers:</strong> use the toggle on the map left</li>
                   <li>📐 <strong>Border:</strong> draw your property outline</li>
-                  <li>🔍 <strong>Zoom:</strong> scroll to zoom; click Save Zoom to keep it</li>
+                  <li>🔍 <strong>Zoom:</strong> scroll to zoom; Save Zoom to keep it</li>
                 </ul>
               </div>
             )}
