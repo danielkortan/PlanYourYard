@@ -1,7 +1,7 @@
 import { useState, useEffect, FormEvent, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Folder, MapPin, Image, Trash2, Calendar, X, Search, Satellite } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
@@ -34,6 +34,17 @@ function MapMover({ lat, lng, zoom }: { lat: number; lng: number; zoom: number }
   return null;
 }
 
+// Tracks the current zoom level so we can save it with the project
+function ZoomTracker({ onChange }: { onChange: (z: number) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    const handler = () => onChange(map.getZoom());
+    map.on('zoomend', handler);
+    return () => { map.off('zoomend', handler); };
+  }, [map, onChange]);
+  return null;
+}
+
 export default function ProjectsPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -47,7 +58,7 @@ export default function ProjectsPage() {
   const [geocoding, setGeocoding] = useState(false);
   const [pickedLat, setPickedLat] = useState<number | null>(null);
   const [pickedLng, setPickedLng] = useState<number | null>(null);
-  const [pickedZoom] = useState(17);
+  const [pickedZoom, setPickedZoom] = useState(19);
   const [saving, setSaving] = useState(false);
   const mapRef = useRef<boolean>(false);
 
@@ -87,6 +98,7 @@ export default function ProjectsPage() {
     setAddressQuery('');
     setPickedLat(null);
     setPickedLng(null);
+    setPickedZoom(19);
     mapRef.current = false;
   };
 
@@ -202,27 +214,30 @@ export default function ProjectsPage() {
                     <span className="text-sm font-medium text-gray-700">Aerial View</span>
                     <span className="text-xs text-gray-400 ml-auto">{form.address}</span>
                   </div>
-                  <div className="rounded-xl overflow-hidden border border-gray-200" style={{ height: 260 }}>
+                  <div className="rounded-xl overflow-hidden border border-gray-200" style={{ height: 280 }}>
                     <MapContainer
                       key={`${pickedLat}-${pickedLng}`}
                       center={[pickedLat, pickedLng]}
                       zoom={pickedZoom}
+                      maxZoom={22}
                       style={{ height: '100%', width: '100%' }}
                       zoomControl={true}
-                      scrollWheelZoom={false}
+                      scrollWheelZoom={true}
                     >
                       <TileLayer
                         url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
                         attribution="Esri, Maxar, Earthstar Geographics"
-                        maxZoom={20}
+                        maxNativeZoom={20}
+                        maxZoom={22}
                       />
                       <MapMover lat={pickedLat} lng={pickedLng} zoom={pickedZoom} />
+                      <ZoomTracker onChange={setPickedZoom} />
                       <Marker position={[pickedLat, pickedLng]} />
                     </MapContainer>
                   </div>
                   <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
                     <MapPin className="w-3 h-3" />
-                    {pickedLat.toFixed(5)}, {pickedLng.toFixed(5)} — you can place plant markers on this view inside the project.
+                    Zoom {pickedZoom} · {pickedLat.toFixed(5)}, {pickedLng.toFixed(5)} · Scroll to zoom in on your property before saving.
                   </p>
                 </div>
               )}

@@ -65,9 +65,11 @@ router.put('/:id', requireAuth, (req: AuthRequest, res: Response) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.id);
   if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
 
-  const { name, address, lat, lng, zoom, description } = req.body;
-  db.prepare('UPDATE projects SET name = ?, address = ?, lat = ?, lng = ?, zoom = ?, description = ? WHERE id = ?').run(
-    name, address, lat || null, lng || null, zoom || 17, description, req.params.id
+  const { name, address, lat, lng, zoom, description, property_border } = req.body;
+  db.prepare('UPDATE projects SET name = ?, address = ?, lat = ?, lng = ?, zoom = ?, description = ?, property_border = ? WHERE id = ?').run(
+    name, address, lat || null, lng || null, zoom || 19, description,
+    property_border !== undefined ? property_border : (project as any).property_border,
+    req.params.id
   );
   res.json(db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id));
 });
