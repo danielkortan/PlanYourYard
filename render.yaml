@@ -3,15 +3,23 @@ services:
     name: plan-your-yard
     runtime: node
     region: oregon
-    plan: free
+    plan: starter   # free plan does not support persistent disks; starter ($7/mo) required
     buildCommand: npm install && npm run build
     startCommand: node backend/dist/index.js
+    disk:
+      name: planyard-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
+      - key: DB_PATH
+        value: /var/data/planyard.db
+      - key: UPLOADS_DIR
+        value: /var/data/uploads
       - key: ANTHROPIC_API_KEY
-        sync: false   # User must set this in the Render dashboard
+        sync: false   # Set this in the Render dashboard
     healthCheckPath: /api/health
     autoDeploy: true
