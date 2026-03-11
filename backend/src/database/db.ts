@@ -62,7 +62,8 @@ db.exec(`
 `);
 
 // Safe column migrations (no-op if column already exists)
-try { db.exec('ALTER TABLE projects ADD COLUMN zoom INTEGER DEFAULT 17'); } catch {}
+try { db.exec('ALTER TABLE projects ADD COLUMN zoom INTEGER DEFAULT 19'); } catch {}
+try { db.exec('ALTER TABLE projects ADD COLUMN property_border TEXT DEFAULT NULL'); } catch {}
 
 function seedAdmin() {
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@planyouryard.com';
