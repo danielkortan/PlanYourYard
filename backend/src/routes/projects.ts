@@ -153,17 +153,31 @@ router.post('/:id/aerial-markers', requireAuth, (req: AuthRequest, res: Response
   const project = db.prepare('SELECT * FROM projects WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.id);
   if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
 
-  const { plant_id, plant_name, lat, lng, notes } = req.body;
+  const { plant_id, plant_name, lat, lng, notes, status, year_planted, growth_rate, plant_type, max_height_ft } = req.body;
   if (!plant_id || !plant_name || lat == null || lng == null) {
     res.status(400).json({ error: 'plant_id, plant_name, lat, lng are required' });
     return;
   }
 
   const result = db.prepare(
-    'INSERT INTO aerial_markers (project_id, plant_id, plant_name, lat, lng, notes) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(req.params.id, plant_id, plant_name, lat, lng, notes || '');
+    'INSERT INTO aerial_markers (project_id, plant_id, plant_name, lat, lng, notes, status, year_planted, growth_rate, plant_type, max_height_ft) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(req.params.id, plant_id, plant_name, lat, lng, notes || '', status || 'planted', year_planted || null, growth_rate || 'medium', plant_type || 'tree', max_height_ft || null);
 
   res.status(201).json(db.prepare('SELECT * FROM aerial_markers WHERE id = ?').get(result.lastInsertRowid));
+});
+
+// PATCH /api/projects/:id/aerial-markers/:markerId
+router.patch('/:id/aerial-markers/:markerId', requireAuth, (req: AuthRequest, res: Response) => {
+  const project = db.prepare('SELECT * FROM projects WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.id);
+  if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
+
+  const marker = db.prepare('SELECT * FROM aerial_markers WHERE id = ? AND project_id = ?').get(req.params.markerId, req.params.id) as any;
+  if (!marker) { res.status(404).json({ error: 'Marker not found' }); return; }
+
+  const status = req.body.status !== undefined ? req.body.status : marker.status;
+  const year_planted = req.body.year_planted !== undefined ? req.body.year_planted : marker.year_planted;
+  db.prepare('UPDATE aerial_markers SET status = ?, year_planted = ? WHERE id = ?').run(status, year_planted, req.params.markerId);
+  res.json(db.prepare('SELECT * FROM aerial_markers WHERE id = ?').get(req.params.markerId));
 });
 
 // DELETE /api/projects/:id/aerial-markers/:markerId

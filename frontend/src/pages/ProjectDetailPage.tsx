@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, Upload, Trash2, Plus, X, Search, MapPin, Leaf,
   Satellite, Image as ImageIcon, Sun, Cloud, Moon, Ruler,
   Map as MapIcon, Layers, PenLine, Undo2, Check, ZoomIn, Save,
-  RotateCw, Scissors,
+  RotateCw, Scissors, Clock, TrendingUp,
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Polygon, Polyline, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -40,6 +40,11 @@ interface AerialMarker {
   lat: number;
   lng: number;
   notes: string;
+  status: 'planted' | 'planned';
+  year_planted: number | null;
+  growth_rate: string;
+  plant_type: string;
+  max_height_ft: number | null;
 }
 
 interface ProjectImage {
@@ -73,11 +78,13 @@ interface PlantResult {
   height: { min: number; max: number };
   waterRequirements: string;
   bloomColor: string[];
+  growthRate?: string;
 }
 
 type MapLayer = 'satellite' | 'street' | 'hybrid';
 type MapMode  = 'place' | 'draw-border';
 type Tab      = 'aerial' | 'photos';
+type AgeOffset = 0 | 1 | 5 | 10 | 30;
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -110,10 +117,17 @@ const TILE_LAYERS: Record<MapLayer, { url: string; attribution: string; overlay?
   hybrid: {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     attribution: 'Esri, Maxar, © OpenStreetMap contributors',
-    // World_Reference_Overlay = transparent labels/roads/boundaries designed for satellite base
     overlay: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Reference_Overlay/MapServer/tile/{z}/{y}/{x}',
   },
 };
+
+const GROWTH_FT_PER_YEAR: Record<string, number> = {
+  slow: 0.5,
+  medium: 1.25,
+  fast: 2.5,
+};
+
+const CURRENT_YEAR = 2026;
 
 // ── Helper components ──────────────────────────────────────────────────────
 
@@ -123,13 +137,21 @@ function SunBadge({ req }: { req: string }) {
   return <span className="flex items-center gap-0.5 text-blue-500 text-xs font-medium"><Moon className="w-3 h-3" /> Full Shade</span>;
 }
 
-function leafIcon(idx: number) {
-  return L.divIcon({
-    html: `<div style="background:${mkColor(idx)};width:24px;height:24px;border-radius:50%;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>
-    </div>`,
-    className: '', iconSize: [24, 24], iconAnchor: [12, 12],
-  });
+function aerialMarkerIcon(idx: number, status: 'planted' | 'planned', scale = 1) {
+  const color = mkColor(idx);
+  const size = Math.round(Math.max(20, Math.min(48, 28 * scale)));
+  const iconSvg = `<svg width="${Math.round(size * 0.46)}" height="${Math.round(size * 0.46)}" viewBox="0 0 24 24" fill="none" stroke="${status === 'planted' ? 'white' : color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>`;
+  if (status === 'planted') {
+    return L.divIcon({
+      html: `<div style="background:${color};width:${size}px;height:${size}px;border-radius:50%;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;">${iconSvg}</div>`,
+      className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
+    });
+  } else {
+    return L.divIcon({
+      html: `<div style="background:${color}33;width:${size}px;height:${size}px;border-radius:50%;border:2.5px dashed ${color};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 4px rgba(0,0,0,.2);">${iconSvg}</div>`,
+      className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
+    });
+  }
 }
 
 function dotIcon(color: string, size = 10) {
@@ -137,6 +159,23 @@ function dotIcon(color: string, size = 10) {
     html: `<div style="width:${size}px;height:${size}px;background:${color};border-radius:50%;border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,.5);"></div>`,
     className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
   });
+}
+
+// Estimates plant height at a given year offset from now
+function estimateHeight(marker: AerialMarker, yearOffset: number): number {
+  if (!marker.year_planted) return 0;
+  const age = (CURRENT_YEAR + yearOffset) - marker.year_planted;
+  if (age <= 0) return 0;
+  const rate = GROWTH_FT_PER_YEAR[marker.growth_rate] ?? 1.25;
+  const maxH = marker.max_height_ft || 40;
+  return Math.round(Math.min(maxH, age * rate) * 10) / 10;
+}
+
+// Scale for marker icon size relative to mature size (0.3–1.3)
+function markerAgeScale(marker: AerialMarker, yearOffset: number): number {
+  const est = estimateHeight(marker, yearOffset);
+  const maxH = marker.max_height_ft || 30;
+  return 0.35 + 0.95 * Math.min(1, est / Math.max(1, maxH));
 }
 
 // Captures the Leaflet map instance into a ref and notifies parent
@@ -151,7 +190,7 @@ function MapRefCapture({
   useEffect(() => {
     mapRef.current = map;
     onMount?.(map);
-  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return null;
 }
 
@@ -189,17 +228,17 @@ function MapClickHandler({
 // ── Shared plant picker ─────────────────────────────────────────────────────
 
 interface PlantPickerProps {
-  onPlace: (plant: PlantResult, notes: string) => Promise<void>;
+  onPlace: (plant: PlantResult, notes: string, status?: 'planted' | 'planned', yearPlanted?: number | null) => Promise<void>;
   onCancel: () => void;
+  showPlantingDetails?: boolean;
 }
 
-// iNaturalist result mapped to PlantResult shape
 function inatToPlantResult(taxon: any): PlantResult {
   return {
     id: `inat-${taxon.id}`,
     commonName: taxon.preferred_common_name || taxon.english_common_name || taxon.name,
     scientificName: taxon.name,
-    type: 'tree',           // iNat doesn't provide type — default
+    type: 'tree',
     sunRequirements: [],
     height: { min: 0, max: 0 },
     waterRequirements: '',
@@ -207,12 +246,14 @@ function inatToPlantResult(taxon: any): PlantResult {
   };
 }
 
-function PlantPicker({ onPlace, onCancel }: PlantPickerProps) {
+function PlantPicker({ onPlace, onCancel, showPlantingDetails }: PlantPickerProps) {
   const [query, setQuery]         = useState('');
   const [results, setResults]     = useState<PlantResult[]>([]);
   const [inatResults, setInatResults] = useState<PlantResult[]>([]);
   const [selected, setSelected]   = useState<PlantResult | null>(null);
   const [notes, setNotes]         = useState('');
+  const [plantStatus, setPlantStatus] = useState<'planted' | 'planned'>('planted');
+  const [yearPlanted, setYearPlanted] = useState<number | null>(null);
   const [searching, setSearching] = useState(false);
   const [placing, setPlacing]     = useState(false);
   const [showManual, setShowManual] = useState(false);
@@ -227,12 +268,10 @@ function PlantPicker({ onPlace, onCancel }: PlantPickerProps) {
         const local = await axios.get('/api/plants/search', { params: { q: query, limit: 10 } });
         const localList: PlantResult[] = local.data.results || [];
         setResults(localList);
-        // If fewer than 4 local results, also query iNaturalist for broader matches
         if (localList.length < 4) {
           try {
             const inat = await axios.get('/api/plants/inaturalist/search', { params: { q: query } });
             const taxa: any[] = inat.data.results || [];
-            // Exclude any that already appear in local results
             const localIds = new Set(localList.map(p => p.scientificName.toLowerCase()));
             const extra = taxa
               .filter(t => t.preferred_common_name || t.english_common_name)
@@ -240,7 +279,7 @@ function PlantPicker({ onPlace, onCancel }: PlantPickerProps) {
               .slice(0, 8)
               .map(inatToPlantResult);
             setInatResults(extra);
-          } catch { /* iNat unavailable — silently skip */ }
+          } catch { /* iNat unavailable */ }
         } else {
           setInatResults([]);
         }
@@ -253,7 +292,7 @@ function PlantPicker({ onPlace, onCancel }: PlantPickerProps) {
   const handlePlace = async () => {
     if (!selected) return;
     setPlacing(true);
-    try { await onPlace(selected, notes); }
+    try { await onPlace(selected, notes, showPlantingDetails ? plantStatus : undefined, showPlantingDetails ? yearPlanted : undefined); }
     finally { setPlacing(false); }
   };
 
@@ -345,7 +384,6 @@ function PlantPicker({ onPlace, onCancel }: PlantPickerProps) {
         </div>
       )}
 
-      {/* Manual entry form */}
       {showManual && (
         <div className="border border-dashed border-forest-300 rounded-lg p-3 mb-3 bg-forest-50/50">
           <p className="text-xs font-medium text-forest-800 mb-2">Custom plant entry</p>
@@ -371,7 +409,6 @@ function PlantPicker({ onPlace, onCancel }: PlantPickerProps) {
         </div>
       )}
 
-      {/* Always-visible "add custom" link when there are results but plant not found */}
       {allResults.length > 0 && !selected && !showManual && (
         <button onClick={() => { setShowManual(true); setManualName(query); }}
           className="text-xs text-gray-400 hover:text-forest-600 mb-3 block transition-colors">
@@ -396,6 +433,38 @@ function PlantPicker({ onPlace, onCancel }: PlantPickerProps) {
         </div>
       )}
 
+      {/* Planting details (for aerial markers only) */}
+      {showPlantingDetails && (
+        <div className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <p className="text-xs font-medium text-gray-700 mb-2">Planting Status</p>
+          <div className="flex gap-2 mb-2">
+            <button type="button" onClick={() => setPlantStatus('planted')}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                plantStatus === 'planted' ? 'bg-forest-600 text-white border-forest-600' : 'bg-white text-gray-600 border-gray-200 hover:border-forest-400'
+              }`}>
+              🌱 Planted
+            </button>
+            <button type="button" onClick={() => setPlantStatus('planned')}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                plantStatus === 'planned' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-400'
+              }`}>
+              📋 Planned
+            </button>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Year {plantStatus === 'planted' ? 'planted' : 'to plant'}:</label>
+            <input
+              type="number"
+              value={yearPlanted || ''}
+              onChange={e => setYearPlanted(e.target.value ? parseInt(e.target.value) : null)}
+              placeholder={String(CURRENT_YEAR)}
+              min={1900} max={2100}
+              className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-forest-500"
+            />
+          </div>
+        </div>
+      )}
+
       <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes (optional)…" rows={2}
         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-forest-500 resize-none mb-3" />
 
@@ -412,6 +481,7 @@ function PlantPicker({ onPlace, onCancel }: PlantPickerProps) {
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [project, setProject]   = useState<Project | null>(null);
   const [loading, setLoading]   = useState(true);
   const [tab, setTab]           = useState<Tab>('aerial');
@@ -431,6 +501,9 @@ export default function ProjectDetailPage() {
   const [clipMode, setClipMode]   = useState(false);
   const [rotation, setRotation]   = useState(0);
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
+
+  // Age timeline
+  const [ageOffset, setAgeOffset] = useState<AgeOffset>(0);
 
   // Photo tab state
   const [activeImageId, setActiveImageId] = useState<number | null>(null);
@@ -452,10 +525,15 @@ export default function ProjectDetailPage() {
             setClipMode(true);
           } catch {}
         }
+        // If navigated with ?step=draw-border, auto-start border drawing
+        if (searchParams.get('step') === 'draw-border' && p.lat && p.lng) {
+          setMapMode('draw-border');
+          setTab('aerial');
+        }
       })
       .catch(() => { toast.error('Project not found'); navigate('/projects'); })
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Apply / remove CSS clip-path on every map move/zoom while clip mode is on
   useEffect(() => {
@@ -519,7 +597,6 @@ export default function ProjectDetailPage() {
       setBorderPoints([]);
       setClipMode(true);
       setRotation(0);
-      // Fit map to property bounds
       if (mapRef.current) {
         const bounds = L.latLngBounds(borderPoints.map(([lat, lng]) => L.latLng(lat, lng)));
         mapRef.current.fitBounds(bounds, { padding: [60, 60] });
@@ -571,11 +648,16 @@ export default function ProjectDetailPage() {
     setBorderPoints(pts => [...pts, [lat, lng]]);
   }, []);
 
-  const handlePlaceAerialMarker = async (plant: PlantResult, notes: string) => {
+  const handlePlaceAerialMarker = async (plant: PlantResult, notes: string, status?: 'planted' | 'planned', yearPlanted?: number | null) => {
     if (!pendingAerialClick) return;
     const res = await axios.post(`/api/projects/${id}/aerial-markers`, {
       plant_id: plant.id, plant_name: plant.commonName,
       lat: pendingAerialClick.lat, lng: pendingAerialClick.lng, notes,
+      status: status || 'planted',
+      year_planted: yearPlanted || null,
+      growth_rate: plant.growthRate || 'medium',
+      plant_type: plant.type || 'tree',
+      max_height_ft: plant.height?.max || null,
     });
     setProject(prev => prev ? { ...prev, aerialMarkers: [...prev.aerialMarkers, res.data] } : prev);
     setPendingAerialClick(null);
@@ -587,6 +669,17 @@ export default function ProjectDetailPage() {
       await axios.delete(`/api/projects/${id}/aerial-markers/${markerId}`);
       setProject(prev => prev ? { ...prev, aerialMarkers: prev.aerialMarkers.filter(m => m.id !== markerId) } : prev);
     } catch { toast.error('Failed to remove marker'); }
+  };
+
+  const handleToggleMarkerStatus = async (marker: AerialMarker) => {
+    const newStatus = marker.status === 'planted' ? 'planned' : 'planted';
+    try {
+      const res = await axios.patch(`/api/projects/${id}/aerial-markers/${marker.id}`, { status: newStatus });
+      setProject(prev => prev ? {
+        ...prev,
+        aerialMarkers: prev.aerialMarkers.map(m => m.id === marker.id ? res.data : m),
+      } : prev);
+    } catch { toast.error('Failed to update marker'); }
   };
 
   // ── Photo handlers ──────────────────────────────────────────────────────
@@ -658,9 +751,12 @@ export default function ProjectDetailPage() {
   if (loading) return <div className="flex items-center justify-center py-20 text-gray-400">Loading…</div>;
   if (!project) return null;
 
-  const hasAerial   = !!(project.lat && project.lng);
-  const tileConfig  = TILE_LAYERS[mapLayer];
-  const isDrawing   = mapMode === 'draw-border';
+  const hasAerial  = !!(project.lat && project.lng);
+  const tileConfig = TILE_LAYERS[mapLayer];
+  const isDrawing  = mapMode === 'draw-border';
+
+  // Map height: maximize in clip mode to fill available viewport
+  const mapHeight = clipMode ? 'calc(100vh - 220px)' : 680;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
@@ -678,6 +774,12 @@ export default function ProjectDetailPage() {
           )}
           {project.description && <p className="text-sm text-gray-400 mt-1">{project.description}</p>}
         </div>
+        {/* Step indicator when drawing border for the first time */}
+        {isDrawing && !savedBorder && (
+          <div className="bg-forest-50 border border-forest-200 rounded-xl px-4 py-2 text-sm text-forest-700">
+            <span className="font-medium">Step 2 of 2</span> — Draw your property border
+          </div>
+        )}
       </div>
 
       {/* Tab switcher */}
@@ -685,7 +787,7 @@ export default function ProjectDetailPage() {
         {hasAerial && (
           <button onClick={() => setTab('aerial')}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'aerial' ? 'bg-white shadow text-forest-800' : 'text-gray-500 hover:text-gray-700'}`}>
-            <Satellite className="w-4 h-4" /> Aerial Map
+            <Satellite className="w-4 h-4" /> {clipMode ? 'Property View' : 'Aerial Map'}
           </button>
         )}
         <button onClick={() => setTab('photos')}
@@ -702,7 +804,7 @@ export default function ProjectDetailPage() {
         <div className="flex flex-col lg:flex-row gap-6">
           <div className="flex-1 min-w-0">
 
-            {/* Compact toolbar: border tools + save zoom only (layer toggle moved onto map) */}
+            {/* Toolbar */}
             <div className="flex flex-wrap items-center gap-2 mb-3">
               {!isDrawing ? (
                 <>
@@ -751,7 +853,7 @@ export default function ProjectDetailPage() {
                   </button>
                   <button onClick={finishBorder} disabled={borderPoints.length < 3 || savingBorder}
                     className="flex items-center gap-1 px-3 py-1.5 bg-forest-600 hover:bg-forest-700 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-colors">
-                    <Check className="w-3.5 h-3.5" /> {savingBorder ? 'Saving…' : 'Finish'}
+                    <Check className="w-3.5 h-3.5" /> {savingBorder ? 'Saving…' : 'Finish Border'}
                   </button>
                   <button onClick={cancelDrawing}
                     className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-200 hover:border-red-400 rounded-lg text-xs font-medium text-gray-500 hover:text-red-600 transition-colors">
@@ -763,12 +865,11 @@ export default function ProjectDetailPage() {
               <div className="h-6 w-px bg-gray-200" />
               <button onClick={saveCurrentZoom} disabled={savingZoom}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 hover:border-gray-400 rounded-lg text-xs font-medium text-gray-600 transition-colors"
-                title="Save current zoom as default for this project">
+                title="Save current zoom as default">
                 <Save className="w-3.5 h-3.5" />
                 {savingZoom ? 'Saving…' : 'Save Zoom'}
               </button>
 
-              {/* Status hint */}
               <span className="text-xs text-gray-400 ml-auto">
                 {isDrawing ? (
                   <span className="text-forest-600 font-medium flex items-center gap-1">
@@ -782,11 +883,12 @@ export default function ProjectDetailPage() {
               </span>
             </div>
 
-            {/* Map — outer container: neutral dot-grid bg when clip mode is on */}
+            {/* Map outer container */}
             <div
               className={`relative ${isDrawing ? 'ring-2 ring-forest-400 rounded-xl' : ''} ${!clipMode ? 'rounded-xl overflow-hidden border border-gray-200' : ''}`}
               style={{
-                height: 720,
+                height: mapHeight,
+                minHeight: clipMode ? 400 : undefined,
                 ...(clipMode ? {
                   backgroundColor: '#e2e8f0',
                   backgroundImage: 'radial-gradient(circle, #94a3b8 1.5px, transparent 1.5px)',
@@ -807,7 +909,7 @@ export default function ProjectDetailPage() {
                   willChange: clipMode ? 'transform, clip-path' : 'auto',
                 }}
               >
-                {/* Layer toggle — vertical pill buttons overlaid on map left */}
+                {/* Layer toggle */}
                 <div className="absolute top-3 left-3 z-[1000] flex flex-col gap-1 bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-1.5 border border-gray-200">
                   <button onClick={() => setMapLayer('satellite')}
                     className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${mapLayer === 'satellite' ? 'bg-gray-900 text-white shadow' : 'text-gray-600 hover:bg-gray-100'}`}>
@@ -845,7 +947,7 @@ export default function ProjectDetailPage() {
                   <MapRefCapture mapRef={mapRef} onMount={setMapInstance} />
                   <MapClickHandler mode={mapMode} onPlace={handleMapClick} onBorder={handleBorderClick} />
 
-                  {/* Property border — shown as polygon only when NOT in clip mode */}
+                  {/* Property border polygon — only when NOT in clip mode */}
                   {savedBorder && savedBorder.length >= 3 && !isDrawing && !clipMode && (
                     <Polygon
                       positions={savedBorder}
@@ -870,12 +972,16 @@ export default function ProjectDetailPage() {
                   )}
 
                   {project.aerialMarkers.map((m, idx) => (
-                    <Marker key={m.id} position={[m.lat, m.lng]} icon={leafIcon(idx)} />
+                    <Marker
+                      key={`${m.id}-${ageOffset}`}
+                      position={[m.lat, m.lng]}
+                      icon={aerialMarkerIcon(idx, m.status || 'planted', markerAgeScale(m, ageOffset))}
+                    />
                   ))}
                 </MapContainer>
               </div>
 
-              {/* ── Clip mode overlays (outside the rotating wrapper) ── */}
+              {/* Clip mode overlays (outside the rotating wrapper) */}
 
               {/* Compass — always points north */}
               {clipMode && (
@@ -918,16 +1024,89 @@ export default function ProjectDetailPage() {
           {/* Right panel */}
           <div className="lg:w-72 xl:w-80 shrink-0 space-y-4">
             {pendingAerialClick && !isDrawing ? (
-              <PlantPicker onPlace={handlePlaceAerialMarker} onCancel={() => setPendingAerialClick(null)} />
+              <PlantPicker onPlace={handlePlaceAerialMarker} onCancel={() => setPendingAerialClick(null)} showPlantingDetails />
+            ) : isDrawing ? (
+              <div className="bg-forest-50 border border-forest-200 rounded-xl p-4 text-sm text-forest-700">
+                <p className="font-medium mb-2 flex items-center gap-2">
+                  <PenLine className="w-4 h-4" /> Drawing Property Border
+                </p>
+                <ol className="space-y-1.5 text-forest-600 text-xs list-decimal list-inside">
+                  <li>Click around the edge of your property</li>
+                  <li>Add at least 3 points to form a polygon</li>
+                  <li>Use <strong>Undo</strong> to remove the last point</li>
+                  <li>Click <strong>Finish Border</strong> when done</li>
+                </ol>
+                <p className="text-xs text-forest-500 mt-2">{borderPoints.length} point{borderPoints.length !== 1 ? 's' : ''} added</p>
+              </div>
             ) : (
               <div className="bg-forest-50 border border-forest-200 rounded-xl p-4 text-sm text-forest-700">
-                <p className="font-medium mb-2">Aerial Map</p>
+                <p className="font-medium mb-2">Property Workspace</p>
                 <ul className="space-y-1.5 text-forest-600 text-xs">
-                  <li>🌿 <strong>Place plants:</strong> click the map, search a plant</li>
+                  <li>🌿 <strong>Mark plants:</strong> click the map, search a plant</li>
                   <li>🗺 <strong>Layers:</strong> use the toggle on the map left</li>
                   <li>📐 <strong>Border:</strong> draw your property outline</li>
                   <li>🔍 <strong>Zoom:</strong> scroll to zoom; Save Zoom to keep it</li>
                 </ul>
+              </div>
+            )}
+
+            {/* Age Timeline Panel */}
+            {project.aerialMarkers.length > 0 && (
+              <div className="bg-white border border-gray-200 rounded-xl p-4">
+                <h3 className="font-semibold text-gray-900 text-sm mb-3 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-blue-500" />
+                  Age Timeline
+                </h3>
+                <div className="flex gap-1 mb-3 flex-wrap">
+                  {([0, 1, 5, 10, 30] as AgeOffset[]).map(yr => (
+                    <button
+                      key={yr}
+                      onClick={() => setAgeOffset(yr)}
+                      className={`flex-1 min-w-[40px] py-1 rounded-lg text-xs font-medium transition-colors ${
+                        ageOffset === yr ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {yr === 0 ? 'Now' : `+${yr}yr`}
+                    </button>
+                  ))}
+                </div>
+                <div className="space-y-2">
+                  {project.aerialMarkers.map((m, idx) => {
+                    const est = estimateHeight(m, ageOffset);
+                    const futureYear = CURRENT_YEAR + ageOffset;
+                    const notPlantedYet = m.year_planted && futureYear < m.year_planted;
+                    return (
+                      <div key={m.id} className="flex items-start gap-2">
+                        <div className="w-3.5 h-3.5 rounded-full mt-0.5 shrink-0 border border-white shadow-sm"
+                          style={{ backgroundColor: mkColor(idx), opacity: m.status === 'planned' ? 0.5 : 1 }} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-gray-800 truncate">{m.plant_name}</div>
+                          {notPlantedYet ? (
+                            <div className="text-xs text-gray-400">Not planted until {m.year_planted}</div>
+                          ) : est > 0 ? (
+                            <div className="text-xs text-blue-600 flex items-center gap-1">
+                              <TrendingUp className="w-3 h-3" />
+                              ~{est} ft tall
+                              {m.year_planted && <span className="text-gray-400">· age {futureYear - m.year_planted}yr</span>}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-gray-400">No year data</div>
+                          )}
+                        </div>
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 ${
+                          m.status === 'planted' ? 'bg-forest-100 text-forest-700' : 'bg-blue-50 text-blue-600'
+                        }`}>
+                          {m.status === 'planted' ? '🌱' : '📋'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {ageOffset > 0 && (
+                  <p className="text-xs text-gray-400 mt-2">
+                    Showing estimated sizes in {CURRENT_YEAR + ageOffset}
+                  </p>
+                )}
               </div>
             )}
 
@@ -940,13 +1119,31 @@ export default function ProjectDetailPage() {
                 </h3>
                 <div className="space-y-2">
                   {project.aerialMarkers.map((m, idx) => (
-                    <div key={m.id} className="flex items-start gap-2.5">
-                      <div className="w-4 h-4 rounded-full mt-0.5 shrink-0 border border-white shadow-sm" style={{ backgroundColor: mkColor(idx) }} />
+                    <div key={m.id} className="flex items-start gap-2.5 group">
+                      <div className="w-4 h-4 rounded-full mt-0.5 shrink-0 border border-white shadow-sm"
+                        style={{ backgroundColor: mkColor(idx), opacity: m.status === 'planned' ? 0.5 : 1 }} />
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium text-gray-800 truncate">{m.plant_name}</div>
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          {/* Status toggle button */}
+                          <button
+                            onClick={() => handleToggleMarkerStatus(m)}
+                            className={`text-xs px-1.5 py-0.5 rounded-full font-medium border transition-colors ${
+                              m.status === 'planted'
+                                ? 'bg-forest-50 text-forest-700 border-forest-200 hover:bg-forest-100'
+                                : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100'
+                            }`}
+                            title="Click to toggle planted/planned"
+                          >
+                            {m.status === 'planted' ? '🌱 Planted' : '📋 Planned'}
+                          </button>
+                          {m.year_planted && (
+                            <span className="text-xs text-gray-400">{m.year_planted}</span>
+                          )}
+                        </div>
                         {m.notes && <div className="text-xs text-gray-400 truncate">{m.notes}</div>}
                       </div>
-                      <button onClick={() => handleDeleteAerialMarker(m.id)} className="text-gray-300 hover:text-red-500 transition-colors shrink-0">
+                      <button onClick={() => handleDeleteAerialMarker(m.id)} className="text-gray-300 hover:text-red-500 transition-colors shrink-0 opacity-0 group-hover:opacity-100">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
