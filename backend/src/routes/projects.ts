@@ -57,7 +57,10 @@ router.get('/:id', requireAuth, (req: AuthRequest, res: Response) => {
 
   const aerialMarkers = db.prepare('SELECT * FROM aerial_markers WHERE project_id = ? ORDER BY created_at ASC').all(project.id);
 
-  res.json({ ...project, images: imagesWithMarkers, aerialMarkers });
+  const rawShapes = db.prepare('SELECT * FROM project_shapes WHERE project_id = ? ORDER BY created_at ASC').all(project.id);
+  const shapes = rawShapes.map((s: any) => ({ ...s, coordinates: JSON.parse(s.coordinates) }));
+
+  res.json({ ...project, images: imagesWithMarkers, aerialMarkers, shapes });
 });
 
 // PUT /api/projects/:id
@@ -143,6 +146,33 @@ router.delete('/:id/images/:imageId/markers/:markerId', requireAuth, (req: AuthR
   if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
 
   db.prepare('DELETE FROM plant_markers WHERE id = ? AND image_id = ?').run(req.params.markerId, req.params.imageId);
+  res.json({ success: true });
+});
+
+// ── Yard shapes ────────────────────────────────────────────────────────────
+
+// POST /api/projects/:id/shapes
+router.post('/:id/shapes', requireAuth, (req: AuthRequest, res: Response) => {
+  const project = db.prepare('SELECT * FROM projects WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.id);
+  if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
+
+  const { shape_type, label, coordinates, color, fill_color } = req.body;
+  if (!coordinates) { res.status(400).json({ error: 'coordinates are required' }); return; }
+
+  const result = db.prepare(
+    'INSERT INTO project_shapes (project_id, shape_type, label, coordinates, color, fill_color) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(req.params.id, shape_type || 'custom', label || '', coordinates, color || '#475569', fill_color || '#94a3b8');
+
+  const shape = db.prepare('SELECT * FROM project_shapes WHERE id = ?').get(result.lastInsertRowid) as any;
+  res.status(201).json({ ...shape, coordinates: JSON.parse(shape.coordinates) });
+});
+
+// DELETE /api/projects/:id/shapes/:shapeId
+router.delete('/:id/shapes/:shapeId', requireAuth, (req: AuthRequest, res: Response) => {
+  const project = db.prepare('SELECT * FROM projects WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.id);
+  if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
+
+  db.prepare('DELETE FROM project_shapes WHERE id = ? AND project_id = ?').run(req.params.shapeId, req.params.id);
   res.json({ success: true });
 });
 

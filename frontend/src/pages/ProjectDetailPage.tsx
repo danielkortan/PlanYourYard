@@ -4,7 +4,7 @@ import {
   ArrowLeft, Upload, Trash2, Plus, X, Search, MapPin, Leaf,
   Satellite, Image as ImageIcon, Sun, Cloud, Moon, Ruler,
   Map as MapIcon, Layers, PenLine, Undo2, Check, ZoomIn, Save,
-  RotateCw, Scissors, Clock, TrendingUp,
+  RotateCw, Scissors, Clock, TrendingUp, Square,
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Polygon, Polyline, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -55,6 +55,16 @@ interface ProjectImage {
   markers: PlantMarker[];
 }
 
+interface YardShape {
+  id: number;
+  project_id: number;
+  shape_type: string;
+  label: string;
+  coordinates: [number, number][];
+  color: string;
+  fill_color: string;
+}
+
 interface Project {
   id: number;
   name: string;
@@ -67,6 +77,7 @@ interface Project {
   created_at: string;
   images: ProjectImage[];
   aerialMarkers: AerialMarker[];
+  shapes: YardShape[];
 }
 
 interface PlantResult {
@@ -82,7 +93,7 @@ interface PlantResult {
 }
 
 type MapLayer = 'satellite' | 'street' | 'hybrid';
-type MapMode  = 'place' | 'draw-border';
+type MapMode  = 'place' | 'draw-border' | 'draw-shape';
 type Tab      = 'aerial' | 'photos';
 type AgeOffset = 0 | 1 | 5 | 10 | 30;
 
@@ -120,6 +131,19 @@ const TILE_LAYERS: Record<MapLayer, { url: string; attribution: string; overlay?
     overlay: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Reference_Overlay/MapServer/tile/{z}/{y}/{x}',
   },
 };
+
+const SHAPE_TYPES = [
+  { key: 'house',      label: 'House',       color: '#334155', fill: '#cbd5e1' },
+  { key: 'garage',     label: 'Garage',      color: '#374151', fill: '#d1d5db' },
+  { key: 'patio',      label: 'Patio',       color: '#92400e', fill: '#fde68a' },
+  { key: 'driveway',   label: 'Driveway',    color: '#44403c', fill: '#d6d3d1' },
+  { key: 'path',       label: 'Path',        color: '#78716c', fill: '#e7e5e4' },
+  { key: 'garden_bed', label: 'Garden Bed',  color: '#15803d', fill: '#bbf7d0' },
+  { key: 'lawn',       label: 'Lawn',        color: '#16a34a', fill: '#dcfce7' },
+  { key: 'pool',       label: 'Pool',        color: '#0369a1', fill: '#bae6fd' },
+  { key: 'shed',       label: 'Shed',        color: '#7c2d12', fill: '#fed7aa' },
+  { key: 'custom',     label: 'Custom',      color: '#6d28d9', fill: '#ede9fe' },
+];
 
 const GROWTH_FT_PER_YEAR: Record<string, number> = {
   slow: 0.5,
@@ -159,6 +183,25 @@ function dotIcon(color: string, size = 10) {
     html: `<div style="width:${size}px;height:${size}px;background:${color};border-radius:50%;border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,.5);"></div>`,
     className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
   });
+}
+
+function polygonCentroid(coords: [number, number][]): [number, number] {
+  const lat = coords.reduce((s, p) => s + p[0], 0) / coords.length;
+  const lng = coords.reduce((s, p) => s + p[1], 0) / coords.length;
+  return [lat, lng];
+}
+
+function shapeLabelIcon(label: string, color: string) {
+  return L.divIcon({
+    html: `<div style="background:${color};color:white;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.35);pointer-events:none;">${label}</div>`,
+    className: '',
+    iconAnchor: [0, 8] as [number, number],
+  });
+}
+
+function ZoomWatcher({ onZoomChange }: { onZoomChange: (z: number) => void }) {
+  useMapEvents({ zoomend(e) { onZoomChange(e.target.getZoom()); } });
+  return null;
 }
 
 // Estimates plant height at a given year offset from now
@@ -217,11 +260,17 @@ function CompassRose({ rotation }: { rotation: number }) {
   );
 }
 
-// Handles clicks for either plant placement or border drawing
+// Handles clicks for plant placement, border drawing, or shape drawing
 function MapClickHandler({
-  mode, onPlace, onBorder,
-}: { mode: MapMode; onPlace: (lat: number, lng: number) => void; onBorder: (lat: number, lng: number) => void }) {
-  useMapEvents({ click(e) { mode === 'draw-border' ? onBorder(e.latlng.lat, e.latlng.lng) : onPlace(e.latlng.lat, e.latlng.lng); } });
+  mode, onPlace, onBorder, onShape,
+}: { mode: MapMode; onPlace: (lat: number, lng: number) => void; onBorder: (lat: number, lng: number) => void; onShape: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) {
+      if (mode === 'draw-border') onBorder(e.latlng.lat, e.latlng.lng);
+      else if (mode === 'draw-shape') onShape(e.latlng.lat, e.latlng.lng);
+      else onPlace(e.latlng.lat, e.latlng.lng);
+    },
+  });
   return null;
 }
 
@@ -502,6 +551,15 @@ export default function ProjectDetailPage() {
   const [rotation, setRotation]   = useState(0);
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
 
+  // Zoom tracking (for auto satellite→street switch)
+  const [currentZoom, setCurrentZoom] = useState(0);
+
+  // Yard shape drawing
+  const [shapePoints, setShapePoints]       = useState<[number, number][]>([]);
+  const [newShapeType, setNewShapeType]     = useState('house');
+  const [newShapeLabel, setNewShapeLabel]   = useState('House');
+  const [savingShape, setSavingShape]       = useState(false);
+
   // Age timeline
   const [ageOffset, setAgeOffset] = useState<AgeOffset>(0);
 
@@ -650,6 +708,48 @@ export default function ProjectDetailPage() {
     setBorderPoints(pts => [...pts, [lat, lng]]);
   }, []);
 
+  const handleShapeClick = useCallback((lat: number, lng: number) => {
+    setShapePoints(pts => [...pts, [lat, lng]]);
+  }, []);
+
+  const startDrawingShape = (type: string) => {
+    const t = SHAPE_TYPES.find(s => s.key === type) || SHAPE_TYPES[0];
+    setNewShapeType(type);
+    setNewShapeLabel(t.label);
+    setShapePoints([]);
+    setPendingAerialClick(null);
+    setMapMode('draw-shape');
+  };
+
+  const finishShape = async () => {
+    if (shapePoints.length < 3) { toast.error('Need at least 3 points'); return; }
+    setSavingShape(true);
+    const t = SHAPE_TYPES.find(s => s.key === newShapeType) || SHAPE_TYPES[0];
+    try {
+      const res = await axios.post(`/api/projects/${id}/shapes`, {
+        shape_type: newShapeType,
+        label: newShapeLabel || t.label,
+        coordinates: JSON.stringify(shapePoints),
+        color: t.color,
+        fill_color: t.fill,
+      });
+      setProject(prev => prev ? { ...prev, shapes: [...prev.shapes, res.data] } : prev);
+      setMapMode('place');
+      setShapePoints([]);
+      toast.success(`${res.data.label} added to map!`);
+    } catch { toast.error('Failed to save area'); }
+    finally { setSavingShape(false); }
+  };
+
+  const cancelShapeDrawing = () => { setMapMode('place'); setShapePoints([]); };
+
+  const handleDeleteShape = async (shapeId: number) => {
+    try {
+      await axios.delete(`/api/projects/${id}/shapes/${shapeId}`);
+      setProject(prev => prev ? { ...prev, shapes: prev.shapes.filter(s => s.id !== shapeId) } : prev);
+    } catch { toast.error('Failed to remove area'); }
+  };
+
   const handlePlaceAerialMarker = async (plant: PlantResult, notes: string, status?: 'planted' | 'planned', yearPlanted?: number | null) => {
     if (!pendingAerialClick) return;
     const res = await axios.post(`/api/projects/${id}/aerial-markers`, {
@@ -753,9 +853,15 @@ export default function ProjectDetailPage() {
   if (loading) return <div className="flex items-center justify-center py-20 text-gray-400">Loading…</div>;
   if (!project) return null;
 
-  const hasAerial  = !!(project.lat && project.lng);
-  const tileConfig = TILE_LAYERS[mapLayer];
-  const isDrawing  = mapMode === 'draw-border';
+  const hasAerial       = !!(project.lat && project.lng);
+  const tileConfig      = TILE_LAYERS[mapLayer];
+  const isDrawingBorder = mapMode === 'draw-border';
+  const isDrawingShape  = mapMode === 'draw-shape';
+  const isDrawing       = isDrawingBorder || isDrawingShape;
+
+  // Auto-switch to street map when satellite/hybrid tiles become too blurry at high zoom
+  const autoSwitchedToStreet = (mapLayer === 'satellite' || mapLayer === 'hybrid') && currentZoom >= 20;
+  const effectiveTileConfig  = autoSwitchedToStreet ? TILE_LAYERS.street : tileConfig;
 
   // Map height: maximize in clip mode to fill available viewport
   const mapHeight = clipMode ? 'calc(100vh - 220px)' : 680;
@@ -777,7 +883,7 @@ export default function ProjectDetailPage() {
           {project.description && <p className="text-sm text-gray-400 mt-1">{project.description}</p>}
         </div>
         {/* Step indicator when drawing border for the first time */}
-        {isDrawing && !savedBorder && (
+        {isDrawingBorder && !savedBorder && (
           <div className="bg-forest-50 border border-forest-200 rounded-xl px-4 py-2 text-sm text-forest-700">
             <span className="font-medium">Step 2 of 2</span> — Draw your property border
           </div>
@@ -808,7 +914,31 @@ export default function ProjectDetailPage() {
 
             {/* Toolbar */}
             <div className="flex flex-wrap items-center gap-2 mb-3">
-              {!isDrawing ? (
+              {isDrawingShape ? (
+                <>
+                  {(() => { const t = SHAPE_TYPES.find(s => s.key === newShapeType) || SHAPE_TYPES[0]; return (
+                    <span className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border"
+                      style={{ background: t.fill, borderColor: t.color, color: t.color }}>
+                      <Square className="w-3 h-3" /> {newShapeLabel || t.label}
+                    </span>
+                  ); })()}
+                  <span className="text-xs text-gray-500">
+                    {shapePoints.length === 0 ? 'Click to add corners…' : `${shapePoints.length} point${shapePoints.length !== 1 ? 's' : ''} — keep clicking`}
+                  </span>
+                  <button onClick={() => setShapePoints(pts => pts.slice(0, -1))} disabled={shapePoints.length === 0}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-200 hover:border-gray-400 rounded-lg text-xs font-medium text-gray-600 disabled:opacity-40 transition-colors">
+                    <Undo2 className="w-3.5 h-3.5" /> Undo
+                  </button>
+                  <button onClick={finishShape} disabled={shapePoints.length < 3 || savingShape}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-colors">
+                    <Check className="w-3.5 h-3.5" /> {savingShape ? 'Saving…' : 'Finish Area'}
+                  </button>
+                  <button onClick={cancelShapeDrawing}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-200 hover:border-red-400 rounded-lg text-xs font-medium text-gray-500 hover:text-red-600 transition-colors">
+                    <X className="w-3.5 h-3.5" /> Cancel
+                  </button>
+                </>
+              ) : !isDrawingBorder ? (
                 <>
                   <button onClick={startDrawingBorder}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 hover:border-forest-400 rounded-lg text-xs font-medium text-gray-700 transition-colors">
@@ -911,33 +1041,58 @@ export default function ProjectDetailPage() {
                   zoomControl={true}
                 >
                   <TileLayer
-                    key={mapLayer}
-                    url={tileConfig.url}
-                    attribution={tileConfig.attribution}
+                    key={`${mapLayer}-${autoSwitchedToStreet}`}
+                    url={effectiveTileConfig.url}
+                    attribution={effectiveTileConfig.attribution}
                     maxNativeZoom={20}
                     maxZoom={22}
                   />
-                  {mapLayer === 'hybrid' && tileConfig.overlay && (
+                  {mapLayer === 'hybrid' && !autoSwitchedToStreet && tileConfig.overlay && (
                     <TileLayer url={tileConfig.overlay} attribution="" maxNativeZoom={20} maxZoom={22} opacity={1} />
                   )}
 
+                  <ZoomWatcher onZoomChange={setCurrentZoom} />
                   <MapRefCapture mapRef={mapRef} onMount={setMapInstance} />
-                  <MapClickHandler mode={mapMode} onPlace={handleMapClick} onBorder={handleBorderClick} />
+                  <MapClickHandler mode={mapMode} onPlace={handleMapClick} onBorder={handleBorderClick} onShape={handleShapeClick} />
 
-                  {/* Property border polygon — only when NOT in clip mode */}
-                  {savedBorder && savedBorder.length >= 3 && !isDrawing && !clipMode && (
+                  {/* Yard shapes */}
+                  {project.shapes.map(s => (
+                    <Polygon
+                      key={s.id}
+                      positions={s.coordinates}
+                      pathOptions={{ color: s.color, fillColor: s.fill_color, fillOpacity: 0.4, weight: 2 }}
+                    />
+                  ))}
+                  {project.shapes.map(s => s.coordinates.length >= 3 && (
+                    <Marker
+                      key={`label-${s.id}`}
+                      position={polygonCentroid(s.coordinates)}
+                      icon={shapeLabelIcon(s.label, s.color)}
+                    />
+                  ))}
+
+                  {/* Property border — always visible so it stays clear at any zoom */}
+                  {savedBorder && savedBorder.length >= 3 && !isDrawingBorder && (
                     <Polygon
                       positions={savedBorder}
-                      pathOptions={{ color: '#16a34a', fillColor: '#22c55e', fillOpacity: 0.1, weight: 2.5, dashArray: '6 4' }}
+                      pathOptions={{ color: '#16a34a', fillColor: '#22c55e', fillOpacity: clipMode ? 0 : 0.08, weight: 2.5, dashArray: '6 4' }}
                     />
                   )}
 
                   {/* In-progress border drawing */}
-                  {isDrawing && borderPoints.length >= 2 && (
+                  {isDrawingBorder && borderPoints.length >= 2 && (
                     <Polyline positions={borderPoints} pathOptions={{ color: '#16a34a', weight: 2.5, dashArray: '6 4' }} />
                   )}
-                  {isDrawing && borderPoints.map((pt, i) => (
+                  {isDrawingBorder && borderPoints.map((pt, i) => (
                     <Marker key={i} position={pt} icon={dotIcon(i === 0 ? '#16a34a' : '#22c55e', i === 0 ? 12 : 8)} />
+                  ))}
+
+                  {/* In-progress shape drawing */}
+                  {isDrawingShape && shapePoints.length >= 2 && (
+                    <Polyline positions={shapePoints} pathOptions={{ color: SHAPE_TYPES.find(s => s.key === newShapeType)?.color ?? '#6d28d9', weight: 2.5, dashArray: '5 4' }} />
+                  )}
+                  {isDrawingShape && shapePoints.map((pt, i) => (
+                    <Marker key={i} position={pt} icon={dotIcon(SHAPE_TYPES.find(s => s.key === newShapeType)?.color ?? '#6d28d9', i === 0 ? 12 : 8)} />
                   ))}
 
                   {pendingAerialClick && (
@@ -956,6 +1111,13 @@ export default function ProjectDetailPage() {
                     />
                   ))}
                 </MapContainer>
+
+                {/* Auto-switched layer indicator */}
+                {autoSwitchedToStreet && (
+                  <div className="absolute top-2 left-1/2 -translate-x-1/2 z-[1000] bg-blue-600/90 text-white text-xs px-3 py-1 rounded-full shadow pointer-events-none">
+                    Street map · satellite unavailable at this zoom
+                  </div>
+                )}
               </div>
 
               {/* Clip mode overlays (outside the rotating wrapper) */}
@@ -1002,7 +1164,7 @@ export default function ProjectDetailPage() {
           <div className="lg:w-72 xl:w-80 shrink-0 space-y-4">
             {pendingAerialClick && !isDrawing ? (
               <PlantPicker onPlace={handlePlaceAerialMarker} onCancel={() => setPendingAerialClick(null)} showPlantingDetails />
-            ) : isDrawing ? (
+            ) : isDrawingBorder ? (
               <div className="bg-forest-50 border border-forest-200 rounded-xl p-4 text-sm text-forest-700">
                 <p className="font-medium mb-2 flex items-center gap-2">
                   <PenLine className="w-4 h-4" /> Drawing Property Border
@@ -1015,6 +1177,32 @@ export default function ProjectDetailPage() {
                 </ol>
                 <p className="text-xs text-forest-500 mt-2">{borderPoints.length} point{borderPoints.length !== 1 ? 's' : ''} added</p>
               </div>
+            ) : isDrawingShape ? (
+              (() => { const t = SHAPE_TYPES.find(s => s.key === newShapeType) || SHAPE_TYPES[0]; return (
+                <div className="rounded-xl p-4 text-sm border" style={{ background: t.fill + '55', borderColor: t.color }}>
+                  <p className="font-medium mb-3 flex items-center gap-2" style={{ color: t.color }}>
+                    <Square className="w-4 h-4" /> Drawing {t.label}
+                  </p>
+                  <div className="mb-3">
+                    <label className="text-xs mb-1 block font-medium" style={{ color: t.color }}>Label</label>
+                    <input
+                      type="text"
+                      value={newShapeLabel}
+                      onChange={e => setNewShapeLabel(e.target.value)}
+                      className="w-full px-2.5 py-1.5 border rounded-lg text-xs focus:outline-none focus:ring-2 bg-white"
+                      style={{ borderColor: t.color + '66' }}
+                      placeholder={t.label}
+                    />
+                  </div>
+                  <ol className="space-y-1.5 text-xs list-decimal list-inside" style={{ color: t.color }}>
+                    <li>Click to trace the corners of the area</li>
+                    <li>At least 3 points needed</li>
+                    <li>Use <strong>Undo</strong> to remove the last point</li>
+                    <li>Click <strong>Finish Area</strong> when done</li>
+                  </ol>
+                  <p className="text-xs mt-2 opacity-70" style={{ color: t.color }}>{shapePoints.length} point{shapePoints.length !== 1 ? 's' : ''} added</p>
+                </div>
+              ); })()
             ) : (
               <div className="bg-forest-50 border border-forest-200 rounded-xl p-4 text-sm text-forest-700">
                 <p className="font-medium mb-2">Property Workspace</p>
@@ -1124,6 +1312,45 @@ export default function ProjectDetailPage() {
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {/* Yard Areas */}
+            {!isDrawing && (
+              <div className="bg-white border border-gray-200 rounded-xl p-4">
+                <h3 className="font-semibold text-gray-900 text-sm mb-3 flex items-center gap-2">
+                  <Square className="w-4 h-4 text-gray-500" />
+                  Yard Areas {project.shapes.length > 0 && `(${project.shapes.length})`}
+                </h3>
+                {project.shapes.length > 0 && (
+                  <div className="space-y-1.5 mb-3">
+                    {project.shapes.map(s => {
+                      const t = SHAPE_TYPES.find(st => st.key === s.shape_type) || SHAPE_TYPES[SHAPE_TYPES.length - 1];
+                      return (
+                        <div key={s.id} className="flex items-center gap-2 group">
+                          <span className="w-3.5 h-3.5 rounded-sm shrink-0 border"
+                            style={{ background: s.fill_color, borderColor: s.color }} />
+                          <span className="text-sm text-gray-800 flex-1 truncate">{s.label}</span>
+                          <span className="text-xs text-gray-400 shrink-0">{t.label}</span>
+                          <button onClick={() => handleDeleteShape(s.id)}
+                            className="text-gray-300 hover:text-red-500 transition-colors shrink-0 opacity-0 group-hover:opacity-100">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <p className="text-xs text-gray-500 mb-2 font-medium">Draw a new area:</p>
+                <div className="grid grid-cols-2 gap-1">
+                  {SHAPE_TYPES.map(s => (
+                    <button key={s.key} onClick={() => startDrawingShape(s.key)}
+                      className="flex items-center gap-1.5 px-2 py-1.5 bg-gray-50 hover:bg-gray-100 rounded-lg text-xs text-left transition-colors">
+                      <span className="w-3 h-3 rounded-sm shrink-0 border"
+                        style={{ background: s.fill, borderColor: s.color }} />
+                      {s.label}
+                    </button>
                   ))}
                 </div>
               </div>
