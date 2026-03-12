@@ -1,6 +1,6 @@
-import { useState, useEffect, FormEvent, useRef } from 'react';
+import { useState, useEffect, useRef, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Folder, MapPin, Image, Trash2, Calendar, X, Search, Satellite } from 'lucide-react';
+import { Plus, Folder, MapPin, Image, Trash2, Calendar, X, Satellite, Navigation } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -27,14 +27,35 @@ interface Project {
   created_at: string;
 }
 
-// Moves the map when the picked location changes
+interface NominatimResult {
+  display_name: string;
+  lat: string;
+  lon: string;
+  address?: {
+    house_number?: string;
+    road?: string;
+    city?: string;
+    town?: string;
+    village?: string;
+    state?: string;
+    country?: string;
+  };
+}
+
+function formatSuggestion(r: NominatimResult): string {
+  const a = r.address || {};
+  const street = [a.house_number, a.road].filter(Boolean).join(' ');
+  const locality = a.city || a.town || a.village || '';
+  const state = a.state || '';
+  return [street, locality, state].filter(Boolean).join(', ') || r.display_name.split(',').slice(0, 3).join(',');
+}
+
 function MapMover({ lat, lng, zoom }: { lat: number; lng: number; zoom: number }) {
   const map = useMapEvents({});
   useEffect(() => { map.setView([lat, lng], zoom); }, [lat, lng, zoom]);
   return null;
 }
 
-// Tracks the current zoom level so we can save it with the project
 function ZoomTracker({ onChange }: { onChange: (z: number) => void }) {
   const map = useMap();
   useEffect(() => {
@@ -55,12 +76,15 @@ export default function ProjectsPage() {
   // New project form state
   const [form, setForm] = useState({ name: '', address: '', description: '' });
   const [addressQuery, setAddressQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<NominatimResult[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
   const [pickedLat, setPickedLat] = useState<number | null>(null);
   const [pickedLng, setPickedLng] = useState<number | null>(null);
   const [pickedZoom, setPickedZoom] = useState(19);
   const [saving, setSaving] = useState(false);
-  const mapRef = useRef<boolean>(false);
+  const addressRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     axios.get('/api/projects')
@@ -69,41 +93,63 @@ export default function ProjectsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const geocodeAddress = async () => {
-    if (!addressQuery.trim()) return;
-    setGeocoding(true);
-    try {
-      const res = await axios.get('https://nominatim.openstreetmap.org/search', {
-        params: { q: addressQuery, format: 'json', limit: 1 },
-        headers: { 'Accept-Language': 'en' },
-      });
-      if (res.data.length === 0) {
-        toast.error('Address not found. Try a more specific address.');
-        return;
+  // Real-time address search with debounce
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const q = addressQuery.trim();
+    if (!q || q.length < 4) { setSuggestions([]); setShowDropdown(false); return; }
+    debounceRef.current = setTimeout(async () => {
+      setGeocoding(true);
+      try {
+        const res = await axios.get('https://nominatim.openstreetmap.org/search', {
+          params: { q, format: 'json', limit: 5, addressdetails: 1 },
+          headers: { 'Accept-Language': 'en' },
+        });
+        setSuggestions(res.data);
+        setShowDropdown(res.data.length > 0);
+      } catch { /* silently ignore */ }
+      finally { setGeocoding(false); }
+    }, 300);
+  }, [addressQuery]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (addressRef.current && !addressRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
       }
-      const { lat, lon, display_name } = res.data[0];
-      setPickedLat(parseFloat(lat));
-      setPickedLng(parseFloat(lon));
-      setForm(f => ({ ...f, address: display_name.split(',').slice(0, 3).join(',') }));
-      toast.success('Location found!');
-    } catch {
-      toast.error('Geocoding failed. Check your connection.');
-    } finally {
-      setGeocoding(false);
-    }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const selectSuggestion = (result: NominatimResult) => {
+    const formatted = formatSuggestion(result);
+    setPickedLat(parseFloat(result.lat));
+    setPickedLng(parseFloat(result.lon));
+    setForm(f => ({ ...f, address: formatted }));
+    setAddressQuery(formatted);
+    setSuggestions([]);
+    setShowDropdown(false);
+    toast.success('Location confirmed!');
   };
 
   const resetForm = () => {
     setForm({ name: '', address: '', description: '' });
     setAddressQuery('');
+    setSuggestions([]);
+    setShowDropdown(false);
     setPickedLat(null);
     setPickedLng(null);
     setPickedZoom(19);
-    mapRef.current = false;
   };
 
   const handleCreate = async (e: FormEvent) => {
     e.preventDefault();
+    if (!pickedLat || !pickedLng) {
+      toast.error('Please select an address from the dropdown first');
+      return;
+    }
     setSaving(true);
     try {
       const res = await axios.post('/api/projects', {
@@ -115,8 +161,9 @@ export default function ProjectsPage() {
       setProjects(prev => [{ ...res.data, image_count: 0 }, ...prev]);
       resetForm();
       setShowForm(false);
-      toast.success('Project created!');
-      navigate(`/projects/${res.data.id}`);
+      toast.success('Project created! Now draw your property border.');
+      // Navigate with step=draw-border to guide user to border drawing
+      navigate(`/projects/${res.data.id}?step=draw-border`);
     } catch (err: any) {
       toast.error(err?.response?.data?.error || 'Failed to create project');
     } finally {
@@ -157,53 +204,70 @@ export default function ProjectsPage() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-8">
             <div className="flex items-center justify-between p-6 border-b">
-              <h2 className="text-lg font-semibold text-gray-900">New Landscape Project</h2>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">New Landscape Project</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Step 1 of 2 — Find your property</p>
+              </div>
               <button onClick={() => { setShowForm(false); resetForm(); }} className="text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleCreate} className="p-6 space-y-5">
-              {/* Project name */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Project Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={form.name}
-                  onChange={e => setForm({ ...form, name: e.target.value })}
-                  placeholder="e.g. Front Yard — Summer 2024 Mockup"
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-500"
-                />
-                <p className="text-xs text-gray-400 mt-1">
-                  Save the same address multiple times with different names to compare layout mockups.
-                </p>
-              </div>
-
-              {/* Address finder */}
+              {/* Address finder with real-time autocomplete */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Find Property Address
+                  Property Address <span className="text-red-500">*</span>
                 </label>
-                <div className="flex gap-2">
+                <div ref={addressRef} className="relative">
+                  <Navigation className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="text"
                     value={addressQuery}
-                    onChange={e => setAddressQuery(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), geocodeAddress())}
-                    placeholder="123 Main St, Springfield, VA"
-                    className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-500"
+                    onChange={e => {
+                      setAddressQuery(e.target.value);
+                      setPickedLat(null);
+                      setPickedLng(null);
+                      setForm(f => ({ ...f, address: '' }));
+                    }}
+                    onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
+                    placeholder="Start typing your address…"
+                    autoComplete="off"
+                    className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-500"
                   />
-                  <button
-                    type="button"
-                    onClick={geocodeAddress}
-                    disabled={geocoding || !addressQuery.trim()}
-                    className="flex items-center gap-2 bg-forest-600 hover:bg-forest-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-lg font-medium transition-colors whitespace-nowrap"
-                  >
-                    <Search className="w-4 h-4" />
-                    {geocoding ? 'Finding…' : 'Find'}
-                  </button>
+                  {geocoding && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <div className="w-4 h-4 border-2 border-forest-500 border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  )}
+                  {showDropdown && suggestions.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-200 rounded-xl shadow-xl mt-1 overflow-hidden">
+                      {suggestions.map((s, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => selectSuggestion(s)}
+                          className="w-full text-left px-4 py-3 hover:bg-forest-50 border-b border-gray-100 last:border-0 transition-colors"
+                        >
+                          <div className="flex items-start gap-2.5">
+                            <MapPin className="w-4 h-4 text-forest-500 mt-0.5 shrink-0" />
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">{formatSuggestion(s)}</div>
+                              <div className="text-xs text-gray-400 truncate mt-0.5">{s.display_name}</div>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
+                {pickedLat ? (
+                  <p className="text-xs text-forest-600 mt-1.5 flex items-center gap-1">
+                    <MapPin className="w-3 h-3" /> Address confirmed — satellite map loading below
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-400 mt-1">Type your address and select from the dropdown to confirm it.</p>
+                )}
               </div>
 
               {/* Satellite map preview */}
@@ -212,7 +276,7 @@ export default function ProjectsPage() {
                   <div className="flex items-center gap-2 mb-2">
                     <Satellite className="w-4 h-4 text-forest-600" />
                     <span className="text-sm font-medium text-gray-700">Aerial View</span>
-                    <span className="text-xs text-gray-400 ml-auto">{form.address}</span>
+                    <span className="text-xs text-gray-400 ml-auto truncate max-w-xs">{form.address}</span>
                   </div>
                   <div className="rounded-xl overflow-hidden border border-gray-200" style={{ height: 280 }}>
                     <MapContainer
@@ -237,10 +301,26 @@ export default function ProjectsPage() {
                   </div>
                   <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
                     <MapPin className="w-3 h-3" />
-                    Zoom {pickedZoom} · {pickedLat.toFixed(5)}, {pickedLng.toFixed(5)} · Scroll to zoom in on your property before saving.
+                    Zoom {pickedZoom} · Scroll to zoom in before creating. After creating, you'll draw your property border.
                   </p>
                 </div>
               )}
+
+              {/* Project name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Project Name <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  required
+                  value={form.name}
+                  onChange={e => setForm({ ...form, name: e.target.value })}
+                  placeholder="e.g. Front Yard — Summer 2024 Mockup"
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Save the same address multiple times with different names to compare layout mockups.
+                </p>
+              </div>
 
               {/* Description */}
               <div>
@@ -254,6 +334,12 @@ export default function ProjectsPage() {
                 />
               </div>
 
+              {!pickedLat && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
+                  Please search for and confirm your property address above before creating the project.
+                </div>
+              )}
+
               <div className="flex gap-3 pt-1">
                 <button
                   type="button"
@@ -264,10 +350,10 @@ export default function ProjectsPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={saving}
+                  disabled={saving || !pickedLat}
                   className="flex-1 bg-forest-600 hover:bg-forest-700 disabled:opacity-60 text-white py-2.5 rounded-lg font-medium transition-colors"
                 >
-                  {saving ? 'Creating…' : 'Create Project'}
+                  {saving ? 'Creating…' : 'Create & Draw Border →'}
                 </button>
               </div>
             </form>

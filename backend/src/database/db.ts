@@ -64,6 +64,11 @@ db.exec(`
 // Safe column migrations (no-op if column already exists)
 try { db.exec('ALTER TABLE projects ADD COLUMN zoom INTEGER DEFAULT 19'); } catch {}
 try { db.exec('ALTER TABLE projects ADD COLUMN property_border TEXT DEFAULT NULL'); } catch {}
+try { db.exec("ALTER TABLE aerial_markers ADD COLUMN status TEXT DEFAULT 'planted'"); } catch {}
+try { db.exec('ALTER TABLE aerial_markers ADD COLUMN year_planted INTEGER'); } catch {}
+try { db.exec("ALTER TABLE aerial_markers ADD COLUMN growth_rate TEXT DEFAULT 'medium'"); } catch {}
+try { db.exec("ALTER TABLE aerial_markers ADD COLUMN plant_type TEXT DEFAULT 'tree'"); } catch {}
+try { db.exec('ALTER TABLE aerial_markers ADD COLUMN max_height_ft REAL'); } catch {}
 
 function seedAdmin() {
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@planyouryard.com';
