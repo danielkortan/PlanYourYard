@@ -19,6 +19,8 @@ services:
         value: /var/data/planyard.db
       - key: UPLOADS_DIR
         value: /var/data/uploads
+      - key: JWT_SECRET
+        sync: false   # Set this in the Render dashboard — must stay stable across deploys
       - key: ANTHROPIC_API_KEY
         sync: false   # Set this in the Render dashboard
     healthCheckPath: /api/health

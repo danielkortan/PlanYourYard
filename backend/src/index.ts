@@ -72,7 +72,9 @@ app.listen(PORT, () => {
   console.log(`   Sun Path:    http://localhost:${PORT}/api/sunpath/calculate`);
   console.log(`   Auth API:    http://localhost:${PORT}/api/auth`);
   console.log(`   Projects:    http://localhost:${PORT}/api/projects`);
-  console.log(`   AI Features: ${process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'your_anthropic_api_key_here' ? '✅ Configured' : '⚠️  Not configured (add ANTHROPIC_API_KEY to .env)'}\n`);
+  console.log(`   AI Features: ${process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'your_anthropic_api_key_here' ? '✅ Configured' : '⚠️  Not configured (add ANTHROPIC_API_KEY to .env)'}`);
+  console.log(`   JWT Secret:  ${process.env.JWT_SECRET ? '✅ Set' : '⚠️  Using insecure fallback — set JWT_SECRET env var to persist sessions across deploys'}`);
+  console.log(`   Database:    ${process.env.DB_PATH || path.join(__dirname, '../../planyard.db')}\n`);
 });
 
 export default app;
