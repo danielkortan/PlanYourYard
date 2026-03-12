@@ -574,6 +574,8 @@ export default function ProjectDetailPage() {
   const startDrawingBorder = () => {
     setPendingAerialClick(null);
     setBorderPoints([]);
+    setClipMode(false);
+    setRotation(0);
     setMapMode('draw-border');
   };
 
@@ -814,32 +816,10 @@ export default function ProjectDetailPage() {
                     {savedBorder ? 'Redraw Border' : 'Draw Property Border'}
                   </button>
                   {savedBorder && (
-                    <>
-                      <button onClick={clearBorder}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 hover:border-red-400 rounded-lg text-xs font-medium text-gray-500 hover:text-red-600 transition-colors">
-                        <X className="w-3.5 h-3.5" /> Clear Border
-                      </button>
-                      <button
-                        onClick={() => {
-                          setClipMode(v => {
-                            if (!v && mapRef.current && savedBorder) {
-                              const bounds = L.latLngBounds(savedBorder.map(([lat, lng]) => L.latLng(lat, lng)));
-                              mapRef.current.fitBounds(bounds, { padding: [60, 60] });
-                            }
-                            return !v;
-                          });
-                          setRotation(0);
-                        }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                          clipMode
-                            ? 'bg-forest-600 text-white border-forest-600'
-                            : 'bg-white text-gray-700 border-gray-200 hover:border-forest-400'
-                        }`}
-                      >
-                        <Scissors className="w-3.5 h-3.5" />
-                        {clipMode ? 'Exit Clip View' : 'Clip to Property'}
-                      </button>
-                    </>
+                    <button onClick={clearBorder}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 hover:border-red-400 rounded-lg text-xs font-medium text-gray-500 hover:text-red-600 transition-colors">
+                      <X className="w-3.5 h-3.5" /> Clear Border
+                    </button>
                   )}
                 </>
               ) : (
@@ -890,9 +870,6 @@ export default function ProjectDetailPage() {
                 height: mapHeight,
                 minHeight: clipMode ? 400 : undefined,
                 ...(clipMode ? {
-                  backgroundColor: '#e2e8f0',
-                  backgroundImage: 'radial-gradient(circle, #94a3b8 1.5px, transparent 1.5px)',
-                  backgroundSize: '22px 22px',
                   borderRadius: '12px',
                   overflow: 'hidden',
                 } : {}),
