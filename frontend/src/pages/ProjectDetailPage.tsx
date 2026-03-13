@@ -122,8 +122,8 @@ const TILE_LAYERS: Record<MapLayer, { url: string; attribution: string; overlay?
     attribution: 'Esri, Maxar, Earthstar Geographics',
   },
   street: {
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Esri, HERE, Garmin, © OpenStreetMap contributors',
   },
   hybrid: {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -200,6 +200,8 @@ function shapeLabelIcon(label: string, color: string) {
 }
 
 function ZoomWatcher({ onZoomChange }: { onZoomChange: (z: number) => void }) {
+  const map = useMap();
+  useEffect(() => { onZoomChange(map.getZoom()); }, []); // fire once on mount with initial zoom
   useMapEvents({ zoomend(e) { onZoomChange(e.target.getZoom()); } });
   return null;
 }
@@ -1041,7 +1043,7 @@ export default function ProjectDetailPage() {
                   zoomControl={true}
                 >
                   <TileLayer
-                    key={`${mapLayer}-${autoSwitchedToStreet}`}
+                    key={mapLayer}
                     url={effectiveTileConfig.url}
                     attribution={effectiveTileConfig.attribution}
                     maxNativeZoom={20}
