@@ -199,15 +199,6 @@ function shapeLabelIcon(label: string, color: string) {
   });
 }
 
-function ZoomWatcher({ onZoomChange }: { onZoomChange: (z: number) => void }) {
-  // Only update on explicit user zoom — NOT on initial mount.
-  // If the map loads at a saved zoom ≥ threshold we still want to show
-  // the layer the user chose; the switch only triggers when they
-  // actively zoom in further during the current session.
-  useMapEvents({ zoomend(e) { onZoomChange(e.target.getZoom()); } });
-  return null;
-}
-
 // Estimates plant height at a given year offset from now
 function estimateHeight(marker: AerialMarker, yearOffset: number): number {
   if (!marker.year_planted) return 0;
@@ -555,9 +546,6 @@ export default function ProjectDetailPage() {
   const [rotation, setRotation]   = useState(0);
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
 
-  // Zoom tracking (for auto satellite→street switch)
-  const [currentZoom, setCurrentZoom] = useState(0);
-
   // Yard shape drawing
   const [shapePoints, setShapePoints]       = useState<[number, number][]>([]);
   const [newShapeType, setNewShapeType]     = useState('house');
@@ -863,9 +851,7 @@ export default function ProjectDetailPage() {
   const isDrawingShape  = mapMode === 'draw-shape';
   const isDrawing       = isDrawingBorder || isDrawingShape;
 
-  // Auto-switch to street map when satellite/hybrid tiles become too blurry at high zoom
-  const autoSwitchedToStreet = (mapLayer === 'satellite' || mapLayer === 'hybrid') && currentZoom >= 20;
-  const effectiveTileConfig  = autoSwitchedToStreet ? TILE_LAYERS.street : tileConfig;
+
 
   // Map height: maximize in clip mode to fill available viewport
   const mapHeight = clipMode ? 'calc(100vh - 220px)' : 680;
@@ -1046,16 +1032,15 @@ export default function ProjectDetailPage() {
                 >
                   <TileLayer
                     key={mapLayer}
-                    url={effectiveTileConfig.url}
-                    attribution={effectiveTileConfig.attribution}
+                    url={tileConfig.url}
+                    attribution={tileConfig.attribution}
                     maxNativeZoom={20}
                     maxZoom={22}
                   />
-                  {mapLayer === 'hybrid' && !autoSwitchedToStreet && tileConfig.overlay && (
+                  {mapLayer === 'hybrid' && tileConfig.overlay && (
                     <TileLayer url={tileConfig.overlay} attribution="" maxNativeZoom={20} maxZoom={22} opacity={1} />
                   )}
 
-                  <ZoomWatcher onZoomChange={setCurrentZoom} />
                   <MapRefCapture mapRef={mapRef} onMount={setMapInstance} />
                   <MapClickHandler mode={mapMode} onPlace={handleMapClick} onBorder={handleBorderClick} onShape={handleShapeClick} />
 
@@ -1116,12 +1101,6 @@ export default function ProjectDetailPage() {
                   ))}
                 </MapContainer>
 
-                {/* Auto-switched layer indicator */}
-                {autoSwitchedToStreet && (
-                  <div className="absolute top-2 left-1/2 -translate-x-1/2 z-[1000] bg-blue-600/90 text-white text-xs px-3 py-1 rounded-full shadow pointer-events-none">
-                    Street map · satellite unavailable at this zoom
-                  </div>
-                )}
               </div>
 
               {/* Clip mode overlays (outside the rotating wrapper) */}
