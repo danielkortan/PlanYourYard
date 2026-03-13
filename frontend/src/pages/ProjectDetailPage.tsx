@@ -200,8 +200,10 @@ function shapeLabelIcon(label: string, color: string) {
 }
 
 function ZoomWatcher({ onZoomChange }: { onZoomChange: (z: number) => void }) {
-  const map = useMap();
-  useEffect(() => { onZoomChange(map.getZoom()); }, []); // fire once on mount with initial zoom
+  // Only update on explicit user zoom — NOT on initial mount.
+  // If the map loads at a saved zoom ≥ threshold we still want to show
+  // the layer the user chose; the switch only triggers when they
+  // actively zoom in further during the current session.
   useMapEvents({ zoomend(e) { onZoomChange(e.target.getZoom()); } });
   return null;
 }
