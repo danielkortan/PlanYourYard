@@ -59,6 +59,17 @@ db.exec(`
     notes TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS project_shapes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    shape_type TEXT NOT NULL DEFAULT 'custom',
+    label TEXT NOT NULL DEFAULT '',
+    coordinates TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#475569',
+    fill_color TEXT NOT NULL DEFAULT '#94a3b8',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // Safe column migrations (no-op if column already exists)
