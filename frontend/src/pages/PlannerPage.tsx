@@ -8,7 +8,7 @@ import {
   Sun, Upload, Trash2, Plus, Search, Info, X, Download,
   ImageIcon, Navigation, Eye, TreePine,
   RotateCw, Camera, Sparkles, MapPin, RefreshCw,
-  Layers, Compass, ToggleLeft, ToggleRight, ChevronDown, ChevronUp,
+  Layers, Compass, ToggleLeft, ToggleRight, ChevronDown, ChevronUp, Grid3x3,
 } from 'lucide-react';
 import { YardZone, PlacedPlant, UploadedImage, SunPathData, Plant } from '../types';
 
@@ -294,6 +294,85 @@ function PlantMarkersLayer({
       layers.forEach(l => l.remove());
     };
   }, [map, zones, visible]);
+
+  return null;
+}
+
+function GridOverlayLayer({ visible, gridSizeFt }: { visible: boolean; gridSizeFt: number }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!visible) return;
+
+    const mapContainer = map.getContainer();
+    const div = document.createElement('div');
+    div.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:400;';
+
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('width', '100%');
+    svg.setAttribute('height', '100%');
+    svg.style.cssText = 'position:absolute;top:0;left:0;overflow:visible;';
+
+    div.appendChild(svg);
+    mapContainer.appendChild(div);
+
+    const drawGrid = () => {
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+      const bounds = map.getBounds();
+      const gridMeters = gridSizeFt * 0.3048;
+      const centerLat = bounds.getCenter().lat;
+
+      const degPerMeterLat = 1 / 111111;
+      const degPerMeterLng = 1 / (111111 * Math.cos(centerLat * Math.PI / 180));
+
+      const gridDegLat = gridMeters * degPerMeterLat;
+      const gridDegLng = gridMeters * degPerMeterLng;
+
+      const north = bounds.getNorth();
+      const south = bounds.getSouth();
+      const west = bounds.getWest();
+      const east = bounds.getEast();
+
+      const startLat = Math.floor(south / gridDegLat) * gridDegLat;
+      const startLng = Math.floor(west / gridDegLng) * gridDegLng;
+
+      for (let lat = startLat; lat <= north + gridDegLat; lat += gridDegLat) {
+        const p1 = map.latLngToContainerPoint(L.latLng(lat, west));
+        const p2 = map.latLngToContainerPoint(L.latLng(lat, east));
+        const line = document.createElementNS(ns, 'line');
+        line.setAttribute('x1', String(p1.x - 20));
+        line.setAttribute('y1', String(p1.y));
+        line.setAttribute('x2', String(p2.x + 20));
+        line.setAttribute('y2', String(p2.y));
+        line.setAttribute('stroke', 'rgba(255,255,255,0.4)');
+        line.setAttribute('stroke-width', '0.75');
+        svg.appendChild(line);
+      }
+
+      for (let lng = startLng; lng <= east + gridDegLng; lng += gridDegLng) {
+        const p1 = map.latLngToContainerPoint(L.latLng(north, lng));
+        const p2 = map.latLngToContainerPoint(L.latLng(south, lng));
+        const line = document.createElementNS(ns, 'line');
+        line.setAttribute('x1', String(p1.x));
+        line.setAttribute('y1', String(p1.y - 20));
+        line.setAttribute('x2', String(p2.x));
+        line.setAttribute('y2', String(p2.y + 20));
+        line.setAttribute('stroke', 'rgba(255,255,255,0.4)');
+        line.setAttribute('stroke-width', '0.75');
+        svg.appendChild(line);
+      }
+    };
+
+    drawGrid();
+    map.on('move zoom resize viewreset', drawGrid);
+
+    return () => {
+      map.off('move zoom resize viewreset', drawGrid);
+      div.remove();
+    };
+  }, [visible, map, gridSizeFt]);
 
   return null;
 }
@@ -661,6 +740,10 @@ export default function PlannerPage() {
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
   const [showImageLayer, setShowImageLayer] = useState(false);
 
+  // Grid overlay
+  const [showGrid, setShowGrid] = useState(false);
+  const [gridSize, setGridSize] = useState<1 | 3 | 5 | 10>(5);
+
   const [sidebarTab, setSidebarTab] = useState<'zones' | 'sun' | 'images' | 'plants'>('zones');
   const [geocoding, setGeocoding] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -926,6 +1009,35 @@ export default function PlannerPage() {
                   <button onClick={() => setMapLayer('satellite')} className={`flex-1 text-xs py-2 rounded-lg border font-medium transition-colors ${mapLayer === 'satellite' ? 'bg-forest-600 text-white border-forest-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>Satellite</button>
                   <button onClick={() => setMapLayer('street')} className={`flex-1 text-xs py-2 rounded-lg border font-medium transition-colors ${mapLayer === 'street' ? 'bg-forest-600 text-white border-forest-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>Street Map</button>
                 </div>
+              </div>
+
+              {/* Grid overlay */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="label flex items-center gap-1.5 mb-0">
+                    <Grid3x3 className="w-3.5 h-3.5" /> Grid Overlay
+                  </label>
+                  <button
+                    onClick={() => setShowGrid(v => !v)}
+                    className={`flex items-center gap-1 text-xs font-medium transition-colors ${showGrid ? 'text-forest-700' : 'text-gray-400'}`}
+                    title="Toggle grid overlay"
+                  >
+                    {showGrid ? <ToggleRight className="w-5 h-5 text-forest-600" /> : <ToggleLeft className="w-5 h-5" />}
+                  </button>
+                </div>
+                {showGrid && (
+                  <div className="flex gap-1.5">
+                    {([1, 3, 5, 10] as const).map(ft => (
+                      <button
+                        key={ft}
+                        onClick={() => setGridSize(ft)}
+                        className={`flex-1 text-xs py-1.5 rounded-lg border font-medium transition-colors ${gridSize === ft ? 'bg-forest-600 text-white border-forest-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                      >
+                        {ft}ft
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="border border-gray-200 rounded-xl p-3 space-y-2">
@@ -1277,6 +1389,9 @@ export default function PlannerPage() {
             {/* Drawing layers */}
             <DrawingLayer active={drawingZone} zoneColor={ZONE_COLORS[newZoneType]} onComplete={handleZoneDrawComplete} />
             <DrawingLayer active={drawingBorder} zoneColor="#f59e0b" onComplete={handleBorderDrawComplete} />
+
+            {/* Grid overlay */}
+            <GridOverlayLayer visible={showGrid} gridSizeFt={gridSize} />
 
             {/* Sun path */}
             <SunPathLayer sunData={sunData} visible={showSunPath} />
