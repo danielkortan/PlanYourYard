@@ -1,11 +1,12 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Leaf, Map, TreePine, Eye, Menu, X, Folder, Shield, LogOut, LogIn, User, ChevronDown } from 'lucide-react';
+import { Leaf, Map, TreePine, Eye, Menu, X, Folder, Shield, LogOut, LogIn, User, ChevronDown, PencilRuler } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
 const navItems = [
   { to: '/', label: 'Home', icon: Leaf },
   { to: '/planner', label: 'Yard Planner', icon: Map },
+  { to: '/designer', label: 'Yard Designer', icon: PencilRuler },
   { to: '/plants', label: 'Plant Library', icon: TreePine },
   { to: '/visualize', label: 'AI Visualizer', icon: Eye },
 ];

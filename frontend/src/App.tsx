@@ -10,6 +10,7 @@ import LoginPage from './pages/LoginPage';
 import ProjectsPage from './pages/ProjectsPage';
 import ProjectDetailPage from './pages/ProjectDetailPage';
 import AdminPage from './pages/AdminPage';
+import YardDesignerPage from './pages/YardDesignerPage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 function ProtectedRoute({ children, adminOnly = false }: { children: ReactNode; adminOnly?: boolean }) {
@@ -28,6 +29,7 @@ function AppRoutes() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/planner" element={<PlannerPage />} />
+          <Route path="/designer" element={<YardDesignerPage />} />
           <Route path="/plants" element={<PlantsPage />} />
           <Route path="/visualize" element={<VisualizePage />} />
           <Route path="/login" element={<LoginPage />} />
