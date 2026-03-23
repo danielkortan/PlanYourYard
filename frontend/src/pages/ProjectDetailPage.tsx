@@ -4,7 +4,7 @@ import {
   ArrowLeft, Upload, Trash2, Plus, X, Search, MapPin, Leaf,
   Satellite, Image as ImageIcon, Sun, Cloud, Moon, Ruler,
   Map as MapIcon, Layers, PenLine, Undo2, Check, ZoomIn, Save,
-  RotateCw, Scissors, Clock, TrendingUp, Square,
+  RotateCw, Clock, TrendingUp, Square, EyeOff, Eye,
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Polygon, Polyline, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -252,6 +252,38 @@ function CompassRose({ rotation }: { rotation: number }) {
         ))}
       </svg>
     </div>
+  );
+}
+
+// SVG overlay that renders the property outline and fill on top of the map
+function SvgYardOverlay({
+  border, showSatellite,
+}: { border: [number, number][]; showSatellite: boolean }) {
+  const map = useMap();
+  const [pts, setPts] = useState('');
+
+  useEffect(() => {
+    const update = () => {
+      const pixels = border.map(([lat, lng]) => {
+        const p = map.latLngToContainerPoint(L.latLng(lat, lng));
+        return `${p.x},${p.y}`;
+      });
+      setPts(pixels.join(' '));
+    };
+    update();
+    map.on('move zoom resize viewreset moveend zoomend', update);
+    return () => { map.off('move zoom resize viewreset moveend zoomend', update); };
+  }, [map, border]);
+
+  if (!pts || showSatellite) return null;
+
+  return (
+    <svg
+      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 450 }}
+    >
+      {/* Light green fill for the property area in digital mode */}
+      <polygon points={pts} fill="#dcfce7" stroke="none" opacity="0.85" />
+    </svg>
   );
 }
 
@@ -542,9 +574,12 @@ export default function ProjectDetailPage() {
   const mapWrapperRef = useRef<HTMLDivElement>(null);
 
   // Clip view state
-  const [clipMode, setClipMode]   = useState(false);
-  const [rotation, setRotation]   = useState(0);
+  const [clipMode, setClipMode]       = useState(false);
+  const [rotation, setRotation]       = useState(0);
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
+  const [showSatellite, setShowSatellite] = useState(true);
+  const rotationRef    = useRef(rotation);
+  const outerContainerRef = useRef<HTMLDivElement>(null);
 
   // Yard shape drawing
   const [shapePoints, setShapePoints]       = useState<[number, number][]>([]);
@@ -616,6 +651,54 @@ export default function ProjectDetailPage() {
     const bounds = L.latLngBounds(savedBorder.map(([lat, lng]) => L.latLng(lat, lng)));
     mapInstance.fitBounds(bounds, { padding: [60, 60] });
   }, [mapInstance]); // only on first map mount
+
+  // Keep rotationRef in sync for touch gesture closure
+  useEffect(() => { rotationRef.current = rotation; }, [rotation]);
+
+  // Two-finger rotation gesture on the outer container (only in clip mode)
+  useEffect(() => {
+    const el = outerContainerRef.current;
+    if (!el || !clipMode) return;
+
+    let startAngle = 0;
+    let startRot = 0;
+    let active = false;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 2) return;
+      active = true;
+      const t1 = e.touches[0], t2 = e.touches[1];
+      startAngle = Math.atan2(t2.clientY - t1.clientY, t2.clientX - t1.clientX) * (180 / Math.PI);
+      startRot = rotationRef.current;
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!active || e.touches.length !== 2) return;
+      e.preventDefault();
+      const t1 = e.touches[0], t2 = e.touches[1];
+      const curAngle = Math.atan2(t2.clientY - t1.clientY, t2.clientX - t1.clientX) * (180 / Math.PI);
+      const diff = curAngle - startAngle;
+      setRotation(Math.round(((startRot + diff) % 360 + 360) % 360));
+    };
+
+    const onTouchEnd = () => { active = false; };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+    };
+  }, [clipMode]);
+
+  // Update Leaflet container background when satellite is toggled
+  useEffect(() => {
+    const container = mapInstance?.getContainer();
+    if (!container) return;
+    container.style.background = (!showSatellite && clipMode) ? '#f0fdf4' : '';
+  }, [showSatellite, clipMode, mapInstance]);
 
   const activeImage = project?.images.find(img => img.id === activeImageId) ?? null;
 
@@ -970,7 +1053,12 @@ export default function ProjectDetailPage() {
                 {savingZoom ? 'Saving…' : 'Save Zoom'}
               </button>
 
-              <span className="text-xs text-gray-400 ml-auto">
+              <span className="text-xs text-gray-400 ml-auto flex items-center gap-2">
+                {clipMode && !showSatellite && (
+                  <span className="flex items-center gap-1 text-emerald-700 font-medium bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg">
+                    <Eye className="w-3 h-3" /> Digital View
+                  </span>
+                )}
                 {isDrawing ? (
                   <span className="text-forest-600 font-medium flex items-center gap-1">
                     <PenLine className="w-3.5 h-3.5" /> Drawing border
@@ -985,6 +1073,7 @@ export default function ProjectDetailPage() {
 
             {/* Map outer container */}
             <div
+              ref={outerContainerRef}
               className={`relative ${isDrawing ? 'ring-2 ring-forest-400 rounded-xl' : ''} ${!clipMode ? 'rounded-xl overflow-hidden border border-gray-200' : ''}`}
               style={{
                 height: mapHeight,
@@ -1020,6 +1109,21 @@ export default function ProjectDetailPage() {
                     className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${mapLayer === 'hybrid' ? 'bg-gray-900 text-white shadow' : 'text-gray-600 hover:bg-gray-100'}`}>
                     <Layers className="w-3.5 h-3.5" /> Hybrid
                   </button>
+                  {clipMode && (
+                    <>
+                      <div className="h-px bg-gray-200 my-0.5" />
+                      <button
+                        onClick={() => setShowSatellite(v => !v)}
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
+                          !showSatellite ? 'bg-emerald-600 text-white shadow' : 'text-gray-600 hover:bg-gray-100'
+                        }`}
+                        title={showSatellite ? 'Switch to digital outline view' : 'Show satellite background'}
+                      >
+                        {showSatellite ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        {showSatellite ? 'Digital' : 'Satellite'}
+                      </button>
+                    </>
+                  )}
                 </div>
 
                 <MapContainer
@@ -1036,9 +1140,14 @@ export default function ProjectDetailPage() {
                     attribution={tileConfig.attribution}
                     maxNativeZoom={20}
                     maxZoom={22}
+                    opacity={showSatellite ? 1 : 0}
                   />
                   {mapLayer === 'hybrid' && tileConfig.overlay && (
-                    <TileLayer url={tileConfig.overlay} attribution="" maxNativeZoom={20} maxZoom={22} opacity={1} />
+                    <TileLayer url={tileConfig.overlay} attribution="" maxNativeZoom={20} maxZoom={22} opacity={showSatellite ? 1 : 0} />
+                  )}
+                  {/* Digital outline fill when satellite is hidden */}
+                  {clipMode && savedBorder && savedBorder.length >= 3 && (
+                    <SvgYardOverlay border={savedBorder} showSatellite={showSatellite} />
                   )}
 
                   <MapRefCapture mapRef={mapRef} onMount={setMapInstance} />
@@ -1064,7 +1173,13 @@ export default function ProjectDetailPage() {
                   {savedBorder && savedBorder.length >= 3 && !isDrawingBorder && (
                     <Polygon
                       positions={savedBorder}
-                      pathOptions={{ color: '#16a34a', fillColor: '#22c55e', fillOpacity: clipMode ? 0 : 0.08, weight: 2.5, dashArray: '6 4' }}
+                      pathOptions={{
+                        color: '#16a34a',
+                        fillColor: '#22c55e',
+                        fillOpacity: clipMode ? 0 : 0.08,
+                        weight: !showSatellite ? 4 : 2.5,
+                        dashArray: showSatellite ? '6 4' : undefined,
+                      }}
                     />
                   )}
 
@@ -1120,7 +1235,7 @@ export default function ProjectDetailPage() {
                     type="range"
                     min={0} max={359} value={rotation}
                     onChange={e => setRotation(parseInt(e.target.value))}
-                    className="w-36 accent-forest-600"
+                    className="w-32 accent-forest-600"
                   />
                   <span className="text-xs font-mono text-gray-600 w-9 text-right">{rotation}°</span>
                   <div className="w-px h-5 bg-gray-200" />
@@ -1138,6 +1253,8 @@ export default function ProjectDetailPage() {
                       {label}
                     </button>
                   ))}
+                  <div className="w-px h-5 bg-gray-200" />
+                  <span className="text-xs text-gray-400 hidden sm:inline">Two-finger rotate</span>
                 </div>
               )}
             </div>
@@ -1193,7 +1310,9 @@ export default function ProjectDetailPage() {
                   <li>🌿 <strong>Mark plants:</strong> click the map, search a plant</li>
                   <li>🗺 <strong>Layers:</strong> use the toggle on the map left</li>
                   <li>📐 <strong>Border:</strong> draw your property outline</li>
-                  <li>🔍 <strong>Zoom:</strong> scroll to zoom; Save Zoom to keep it</li>
+                  <li>🔍 <strong>Zoom:</strong> scroll / pinch to zoom</li>
+                  {clipMode && <li>🖐 <strong>Rotate:</strong> two-finger twist or use slider below map</li>}
+                  {clipMode && <li>🌿 <strong>Digital view:</strong> tap "Digital" in the layer panel to hide satellite</li>}
                 </ul>
               </div>
             )}
