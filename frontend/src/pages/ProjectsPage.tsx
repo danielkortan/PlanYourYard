@@ -206,7 +206,7 @@ export default function ProjectsPage() {
             <div className="flex items-center justify-between p-6 border-b">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">New Landscape Project</h2>
-                <p className="text-xs text-gray-400 mt-0.5">Step 1 of 2 — Find your property</p>
+                <p className="text-xs text-gray-400 mt-0.5">Step 1 of 2 — Aerial Reference</p>
               </div>
               <button onClick={() => { setShowForm(false); resetForm(); }} className="text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
@@ -301,7 +301,7 @@ export default function ProjectsPage() {
                   </div>
                   <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
                     <MapPin className="w-3 h-3" />
-                    Zoom {pickedZoom} · Scroll to zoom in before creating. After creating, you'll draw your property border.
+                    Position the map to center your property, then continue to name your project. This aerial view will appear as a reference in your planning workspace.
                   </p>
                 </div>
               )}
