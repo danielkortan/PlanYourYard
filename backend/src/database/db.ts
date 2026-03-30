@@ -80,6 +80,7 @@ try { db.exec('ALTER TABLE aerial_markers ADD COLUMN year_planted INTEGER'); } c
 try { db.exec("ALTER TABLE aerial_markers ADD COLUMN growth_rate TEXT DEFAULT 'medium'"); } catch {}
 try { db.exec("ALTER TABLE aerial_markers ADD COLUMN plant_type TEXT DEFAULT 'tree'"); } catch {}
 try { db.exec('ALTER TABLE aerial_markers ADD COLUMN max_height_ft REAL'); } catch {}
+try { db.exec('ALTER TABLE projects ADD COLUMN yard_design TEXT DEFAULT NULL'); } catch {}
 
 function seedAdmin() {
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@planyouryard.com';
