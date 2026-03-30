@@ -255,7 +255,9 @@ function CompassRose({ rotation }: { rotation: number }) {
   );
 }
 
-// SVG overlay that renders the property outline and fill on top of the map
+// SVG overlay that renders a CAD-style background when satellite is hidden.
+// z-index 300: sits above tile pane (200) but below Leaflet overlay pane (400)
+// so the Leaflet polygon border renders on top naturally.
 function SvgYardOverlay({
   border, showSatellite,
 }: { border: [number, number][]; showSatellite: boolean }) {
@@ -279,10 +281,25 @@ function SvgYardOverlay({
 
   return (
     <svg
-      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 450 }}
+      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 300 }}
     >
-      {/* Light green fill for the property area in digital mode */}
-      <polygon points={pts} fill="#dcfce7" stroke="none" opacity="0.85" />
+      <defs>
+        {/* Fine grid for CAD look */}
+        <pattern id="cad-grid-fine" width="20" height="20" patternUnits="userSpaceOnUse">
+          <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#d1fae5" strokeWidth="0.5" />
+        </pattern>
+        {/* Major grid every 100px */}
+        <pattern id="cad-grid-major" width="100" height="100" patternUnits="userSpaceOnUse">
+          <rect width="100" height="100" fill="url(#cad-grid-fine)" />
+          <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#a7f3d0" strokeWidth="1" />
+        </pattern>
+      </defs>
+      {/* White background covering the entire map area */}
+      <rect x="0" y="0" width="100%" height="100%" fill="white" />
+      {/* CAD grid across the whole map */}
+      <rect x="0" y="0" width="100%" height="100%" fill="url(#cad-grid-major)" />
+      {/* Yard area — subtle light-green fill */}
+      <polygon points={pts} fill="#f0fdf4" stroke="none" />
     </svg>
   );
 }
@@ -697,8 +714,8 @@ export default function ProjectDetailPage() {
   useEffect(() => {
     const container = mapInstance?.getContainer();
     if (!container) return;
-    container.style.background = (!showSatellite && clipMode) ? '#f0fdf4' : '';
-  }, [showSatellite, clipMode, mapInstance]);
+    container.style.background = !showSatellite ? 'white' : '';
+  }, [showSatellite, mapInstance]);
 
   const activeImage = project?.images.find(img => img.id === activeImageId) ?? null;
 
@@ -1134,16 +1151,17 @@ export default function ProjectDetailPage() {
                   style={{ height: '100%', width: '100%' }}
                   zoomControl={true}
                 >
-                  <TileLayer
-                    key={mapLayer}
-                    url={tileConfig.url}
-                    attribution={tileConfig.attribution}
-                    maxNativeZoom={20}
-                    maxZoom={22}
-                    opacity={showSatellite ? 1 : 0}
-                  />
-                  {mapLayer === 'hybrid' && tileConfig.overlay && (
-                    <TileLayer url={tileConfig.overlay} attribution="" maxNativeZoom={20} maxZoom={22} opacity={showSatellite ? 1 : 0} />
+                  {showSatellite && (
+                    <TileLayer
+                      key={mapLayer}
+                      url={tileConfig.url}
+                      attribution={tileConfig.attribution}
+                      maxNativeZoom={20}
+                      maxZoom={22}
+                    />
+                  )}
+                  {showSatellite && mapLayer === 'hybrid' && tileConfig.overlay && (
+                    <TileLayer key="hybrid-overlay" url={tileConfig.overlay} attribution="" maxNativeZoom={20} maxZoom={22} />
                   )}
                   {/* Digital outline fill when satellite is hidden */}
                   {clipMode && savedBorder && savedBorder.length >= 3 && (
