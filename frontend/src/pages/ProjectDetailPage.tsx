@@ -140,6 +140,16 @@ export default function ProjectDetailPage() {
   const panStartRef = useRef<Point>({ x: 0, y: 0 });
   const panOriginRef = useRef<Point>({ x: 0, y: 0 });
 
+  // Drag state (shape-move or vertex-move in select mode)
+  const dragModeRef = useRef<'none' | 'shape' | 'vertex'>('none');
+  const dragShapeIdRef = useRef<string | null>(null);
+  const dragVertexIdxRef = useRef<number>(-1);
+  const dragStartWorldRef = useRef<Point>({ x: 0, y: 0 });
+  const dragOrigPointsRef = useRef<Point[]>([]);
+
+  // Baseline JSON for auto-save diffing (skip save on initial load)
+  const loadedDesignJsonRef = useRef<string>('');
+
   // Mouse position in world coords
   const [cursorWorld, setCursorWorld] = useState<Point | null>(null);
 
@@ -172,9 +182,12 @@ export default function ProjectDetailPage() {
           try {
             const parsed: YardDesign = JSON.parse(proj.yard_design);
             setDesign(parsed);
+            loadedDesignJsonRef.current = proj.yard_design;
           } catch {
             // ignore
           }
+        } else {
+          loadedDesignJsonRef.current = JSON.stringify({ gridScale: 5, shapes: [] });
         }
         hasLoadedRef.current = true;
       })
@@ -195,10 +208,13 @@ export default function ProjectDetailPage() {
 
   useEffect(() => {
     if (!hasLoadedRef.current || !id) return;
+    const currentJson = JSON.stringify(design);
+    if (currentJson === loadedDesignJsonRef.current) return; // unchanged since last save
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
       try {
-        await axios.put(`/api/projects/${id}`, { yard_design: JSON.stringify(design) });
+        await axios.put(`/api/projects/${id}`, { yard_design: currentJson });
+        loadedDesignJsonRef.current = currentJson; // update baseline on success
       } catch {
         toast.error('Auto-save failed');
       }
@@ -249,7 +265,9 @@ export default function ProjectDetailPage() {
     const svgPt = getSvgPoint(e);
     mouseMoveStartRef.current = svgPt;
 
-    if (toolMode === 'pan' || e.altKey) {
+    // Pan when: pan mode, alt-key held, or select mode clicking on empty canvas space.
+    // Shape/vertex onMouseDown handlers stop propagation, so this only fires on empty space.
+    if (toolMode === 'pan' || e.altKey || toolMode === 'select') {
       isPanningRef.current = true;
       panStartRef.current = svgPt;
       panOriginRef.current = { ...panRef.current };
@@ -261,14 +279,37 @@ export default function ProjectDetailPage() {
     const worldPt = getWorldPoint(svgPt);
     setCursorWorld(worldPt);
 
-    if (isPanningRef.current) {
+    if (dragModeRef.current === 'shape' && dragShapeIdRef.current) {
+      const dx = worldPt.x - dragStartWorldRef.current.x;
+      const dy = worldPt.y - dragStartWorldRef.current.y;
+      const shapeId = dragShapeIdRef.current;
+      const origPts = dragOrigPointsRef.current;
+      setDesign(d => ({
+        ...d,
+        shapes: d.shapes.map(s =>
+          s.id === shapeId
+            ? { ...s, points: origPts.map(p => ({ x: p.x + dx, y: p.y + dy })) }
+            : s
+        ),
+      }));
+    } else if (dragModeRef.current === 'vertex' && dragShapeIdRef.current) {
+      const shapeId = dragShapeIdRef.current;
+      const idx = dragVertexIdxRef.current;
+      setDesign(d => ({
+        ...d,
+        shapes: d.shapes.map(s =>
+          s.id === shapeId
+            ? { ...s, points: s.points.map((p, i) => (i === idx ? worldPt : p)) }
+            : s
+        ),
+      }));
+    } else if (isPanningRef.current) {
       const dx = svgPt.x - panStartRef.current.x;
       const dy = svgPt.y - panStartRef.current.y;
       panRef.current = {
         x: panOriginRef.current.x + dx,
         y: panOriginRef.current.y + dy,
       };
-      // Force re-render for live pan feedback
       setPan({ ...panRef.current });
     }
   }
@@ -276,25 +317,32 @@ export default function ProjectDetailPage() {
   function handleCanvasMouseUp(e: MouseEvent) {
     const svgPt = getSvgPoint(e);
     const start = mouseMoveStartRef.current;
+    const moved = start
+      ? Math.sqrt(Math.pow(svgPt.x - start.x, 2) + Math.pow(svgPt.y - start.y, 2))
+      : 999;
 
-    if (isPanningRef.current) {
-      isPanningRef.current = false;
-      setPan({ ...panRef.current });
+    // End shape / vertex drag
+    if (dragModeRef.current !== 'none') {
+      dragModeRef.current = 'none';
+      dragShapeIdRef.current = null;
+      dragVertexIdxRef.current = -1;
+      mouseMoveStartRef.current = null;
       return;
     }
 
-    // Click detection: moved < 5px
-    if (start) {
-      const dx = svgPt.x - start.x;
-      const dy = svgPt.y - start.y;
-      const moved = Math.sqrt(dx * dx + dy * dy);
-      if (moved < 5 && toolMode === 'draw') {
-        const worldPt = getWorldPoint(svgPt);
-        setDrawPoints(prev => [...prev, worldPt]);
-      } else if (moved < 5 && toolMode === 'select') {
-        // Deselect if clicking empty space
-        setSelectedId(null);
-      }
+    // End pan — if it was a small movement treat as a click
+    if (isPanningRef.current) {
+      isPanningRef.current = false;
+      setPan({ ...panRef.current });
+      if (moved < 5 && toolMode === 'select') setSelectedId(null); // deselect on empty-space click
+      mouseMoveStartRef.current = null;
+      return;
+    }
+
+    // Draw mode click
+    if (moved < 5 && toolMode === 'draw') {
+      const worldPt = getWorldPoint(svgPt);
+      setDrawPoints(prev => [...prev, worldPt]);
     }
     mouseMoveStartRef.current = null;
   }
@@ -305,6 +353,12 @@ export default function ProjectDetailPage() {
       isPanningRef.current = false;
       setPan({ ...panRef.current });
     }
+    if (dragModeRef.current !== 'none') {
+      dragModeRef.current = 'none';
+      dragShapeIdRef.current = null;
+      dragVertexIdxRef.current = -1;
+    }
+    mouseMoveStartRef.current = null;
   }
 
   function handleWheel(e: WheelEvent) {
@@ -319,12 +373,6 @@ export default function ProjectDetailPage() {
     panRef.current = { x: newPanX, y: newPanY };
     setPan({ x: newPanX, y: newPanY });
     setZoom(newZoom);
-  }
-
-  function handleShapeClick(shapeId: string, e: MouseEvent) {
-    if (toolMode === 'draw') return;
-    e.stopPropagation();
-    setSelectedId(shapeId);
   }
 
   function finishShape() {
@@ -696,13 +744,35 @@ export default function ProjectDetailPage() {
                 const isSelected = shape.id === selectedId;
 
                 return (
-                  <g key={shape.id} onClick={(e) => handleShapeClick(shape.id, e)}>
+                  <g key={shape.id}>
+                    {/* Invisible hit-area slightly larger than the shape for easier grabbing */}
+                    <path
+                      d={path}
+                      fill="transparent"
+                      stroke="transparent"
+                      strokeWidth={10}
+                      style={{ cursor: toolMode === 'select' ? 'move' : 'default' }}
+                      onMouseDown={(e) => {
+                        if (toolMode !== 'select') return;
+                        e.stopPropagation();
+                        setSelectedId(shape.id);
+                        // Start shape drag from current world position
+                        const svgPt = getSvgPoint(e as unknown as MouseEvent);
+                        const worldPt = getWorldPoint(svgPt);
+                        dragModeRef.current = 'shape';
+                        dragShapeIdRef.current = shape.id;
+                        dragStartWorldRef.current = worldPt;
+                        dragOrigPointsRef.current = shape.points.map(p => ({ ...p }));
+                        mouseMoveStartRef.current = svgPt;
+                      }}
+                    />
                     <path
                       d={path}
                       fill={shape.fill}
                       fillOpacity={0.7}
                       stroke={shape.color}
                       strokeWidth={isSelected ? 0 : 1.5}
+                      style={{ pointerEvents: 'none' }}
                     />
                     {isSelected && (
                       <path
@@ -711,12 +781,23 @@ export default function ProjectDetailPage() {
                         stroke={shape.color}
                         strokeWidth={2}
                         strokeDasharray="6 3"
+                        style={{ pointerEvents: 'none' }}
                       />
                     )}
-                    {/* Vertex dots when selected */}
+                    {/* Vertex dots — draggable when selected */}
                     {isSelected && svgPts.map((pt, i) => (
-                      <circle key={i} cx={pt.x} cy={pt.y} r={4}
-                        fill="white" stroke={shape.color} strokeWidth={1.5}
+                      <circle key={i} cx={pt.x} cy={pt.y} r={6}
+                        fill="white" stroke={shape.color} strokeWidth={2}
+                        style={{ cursor: 'crosshair' }}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          const svgPt = getSvgPoint(e as unknown as MouseEvent);
+                          dragModeRef.current = 'vertex';
+                          dragShapeIdRef.current = shape.id;
+                          dragVertexIdxRef.current = i;
+                          dragStartWorldRef.current = getWorldPoint(svgPt);
+                          mouseMoveStartRef.current = svgPt;
+                        }}
                       />
                     ))}
                     {/* Label */}
