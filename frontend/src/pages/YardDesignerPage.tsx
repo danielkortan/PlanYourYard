@@ -2,9 +2,9 @@ import React, { useState, useRef, useCallback, useEffect, PointerEvent } from 'r
 import toast from 'react-hot-toast';
 import {
   MousePointer2, Home, Trees, Flower2, Tag,
-  Save, RotateCcw, ZoomIn, ZoomOut, Download,
+  Save, RotateCcw, ZoomIn, ZoomOut,
   Square, Minus, Camera, X, ChevronRight,
-  Grid3X3, Pencil, ChevronDown, Printer, FileImage, FileCode,
+  Grid3X3, Pencil, Printer, FileImage, FileCode,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -66,6 +66,36 @@ const STRUCTURE_ICONS: Record<StructureKind, string> = {
   house: '🏠', garage: '🚗', deck: '🪵', patio: '⛱', driveway: '🛣',
   pool: '🏊', fence: '🪜', shed: '🏚', other: '📦',
 };
+
+const TREE_SPECIES: { name: string; color: string }[] = [
+  { name: 'Oak',       color: '#5d4037' },
+  { name: 'Maple',     color: '#bf360c' },
+  { name: 'Pine',      color: '#1b5e20' },
+  { name: 'Cherry',    color: '#ad1457' },
+  { name: 'Apple',     color: '#558b2f' },
+  { name: 'Birch',     color: '#f9a825' },
+  { name: 'Willow',    color: '#827717' },
+  { name: 'Elm',       color: '#2e7d32' },
+  { name: 'Dogwood',   color: '#e91e63' },
+  { name: 'Magnolia',  color: '#6a1b9a' },
+  { name: 'Redbud',    color: '#c62828' },
+  { name: 'Spruce',    color: '#004d40' },
+];
+
+const PLANT_SPECIES: { name: string; color: string }[] = [
+  { name: 'Rose',             color: '#c62828' },
+  { name: 'Hydrangea',        color: '#5c6bc0' },
+  { name: 'Lavender',         color: '#7b1fa2' },
+  { name: 'Boxwood',          color: '#33691e' },
+  { name: 'Azalea',           color: '#e91e63' },
+  { name: 'Hosta',            color: '#558b2f' },
+  { name: 'Fern',             color: '#2e7d32' },
+  { name: 'Ornamental Grass', color: '#f9a825' },
+  { name: 'Daylily',          color: '#ff6f00' },
+  { name: 'Coneflower',       color: '#ad1457' },
+  { name: 'Spirea',           color: '#4a148c' },
+  { name: 'Shrub',            color: '#1b5e20' },
+];
 
 const defaultDesign = (): YardDesign => ({
   elements: [],
@@ -151,9 +181,10 @@ function GridLayer({ widthPx, heightPx, pxPerFt, gridSize, overPhoto }: {
 
 // ─── Element Renderer ─────────────────────────────────────────────────────────
 
-function ElementShape({ el, selected, onPointerDown }: {
+function ElementShape({ el, selected, onPointerDown, showLabel = true }: {
   el: DesignElement; selected: boolean;
   onPointerDown: (e: PointerEvent<SVGElement>, id: string) => void;
+  showLabel?: boolean;
 }) {
   const selGlow = selected ? { filter: 'drop-shadow(0 0 4px rgba(26,115,232,0.7))' } : {};
 
@@ -176,7 +207,7 @@ function ElementShape({ el, selected, onPointerDown }: {
           stroke={el.color || stroke} strokeWidth={2} strokeLinejoin="round"
           fill={el.fill || fill} fillOpacity={el.opacity ?? 0.88}
           style={{ cursor: 'move' }} />
-        {el.label && ctr && (
+        {showLabel && el.label && ctr && (
           <text x={ctr.x} y={ctr.y} textAnchor="middle" dominantBaseline="middle"
             fontSize={11} fontWeight="600" fill={stroke}
             style={{ pointerEvents: 'none', userSelect: 'none', fontFamily: 'Roboto, sans-serif' }}>
@@ -484,9 +515,15 @@ export default function YardDesignerPage() {
   const [showLabelDialog, setShowLabelDialog] = useState(false);
   const [pendingLabelPos, setPendingLabelPos] = useState<Pt | null>(null);
   const [zoom, setZoom]             = useState(1);
-  const [showStructureMenu, setShowStructureMenu] = useState(false);
-  const [showExportMenu, setShowExportMenu] = useState(false);
   const [backgroundImage, setBackgroundImage] = useState<string | null>(loadBackground);
+  const [selectedTreeSpecies, setSelectedTreeSpecies] = useState('Oak');
+  const [selectedPlantSpecies, setSelectedPlantSpecies] = useState('Rose');
+  const [treeCustomInput, setTreeCustomInput] = useState<string | null>(null);
+  const [plantCustomInput, setPlantCustomInput] = useState<string | null>(null);
+  const [showStructureLabels, setShowStructureLabels] = useState(true);
+  const [quickAddLabel, setQuickAddLabel] = useState('');
+  const [quickAddWidth, setQuickAddWidth] = useState(20);
+  const [quickAddHeight, setQuickAddHeight] = useState(15);
 
   const svgRef    = useRef<SVGSVGElement>(null);
   const photoRef  = useRef<HTMLInputElement>(null);
@@ -599,18 +636,21 @@ export default function YardDesignerPage() {
     if (activeTool === 'select') {
       setSelectedId(null);
       setSelectedPtIdx(null);
-      setShowExportMenu(false);
       return;
     }
 
     if (activeTool === 'tree' || activeTool === 'plant') {
       const isTree = activeTool === 'tree';
+      const speciesName = isTree ? selectedTreeSpecies : selectedPlantSpecies;
+      const speciesColor = isTree
+        ? (TREE_SPECIES.find(s => s.name === speciesName)?.color ?? '#2e7d32')
+        : (PLANT_SPECIES.find(s => s.name === speciesName)?.color ?? '#558b2f');
       const el: DesignElement = {
         id: uid(), type: activeTool,
         cx: pt.x, cy: pt.y,
         radius: isTree ? 18 : 9,
-        label: isTree ? 'Tree' : 'Plant',
-        color: isTree ? '#2e7d32' : '#558b2f',
+        label: speciesName,
+        color: speciesColor,
       };
       save({ ...design, elements: [...design.elements, el] });
       setSelectedId(el.id);
@@ -620,10 +660,10 @@ export default function YardDesignerPage() {
     if (activeTool === 'label') { setPendingLabelPos(pt); setShowLabelDialog(true); return; }
 
     if (['property', 'structure', 'path'].includes(activeTool)) {
-      if (activeTool === 'structure' && !pendingStructureKind) { setShowStructureMenu(true); return; }
+      if (activeTool === 'structure' && !pendingStructureKind) { return; }
       setDrawingPoints(prev => [...prev, pt]);
     }
-  }, [activeTool, design, getSvgPt, pendingStructureKind, save]);
+  }, [activeTool, design, getSvgPt, pendingStructureKind, save, selectedTreeSpecies, selectedPlantSpecies]);
 
   // ── Double-click: close polygon ──
   const handleSvgDblClick = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
@@ -819,14 +859,39 @@ export default function YardDesignerPage() {
 
   const handleSave = () => { saveDesign(design); toast.success('Design saved!'); };
 
+  // ── Quick Add ──
+  const handleQuickAdd = () => {
+    const wPx = quickAddWidth * design.pixelsPerFoot;
+    const hPx = quickAddHeight * design.pixelsPerFoot;
+    const cx  = widthPx / 2;
+    const cy  = heightPx / 2;
+    const points: Pt[] = [
+      { x: cx - wPx / 2, y: cy - hPx / 2 },
+      { x: cx + wPx / 2, y: cy - hPx / 2 },
+      { x: cx + wPx / 2, y: cy + hPx / 2 },
+      { x: cx - wPx / 2, y: cy + hPx / 2 },
+    ];
+    const sk = pendingStructureKind || 'other';
+    const { stroke, fill } = STRUCTURE_COLORS[sk];
+    const el: DesignElement = {
+      id: uid(), type: 'structure', points,
+      structureKind: sk,
+      label: quickAddLabel.trim() || STRUCTURE_LABELS[sk],
+      color: stroke, fill,
+    };
+    save({ ...design, elements: [...design.elements, el] });
+    setSelectedId(el.id);
+    toast.success(`${el.label} added`);
+  };
+
   // ── Keyboard shortcuts ──
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'SELECT') return;
       if (e.key === 'Escape') {
         setDrawingPoints([]); setPendingStructureKind(null);
-        setActiveTool('select'); setShowStructureMenu(false);
-        setShowExportMenu(false); setSelectedPtIdx(null);
+        setActiveTool('select');
+        setSelectedPtIdx(null);
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedId) {
@@ -871,12 +936,12 @@ export default function YardDesignerPage() {
   ];
 
   return (
-    <div className="flex flex-col overflow-hidden" style={{ height: 'calc(100vh - 4rem)', fontFamily: 'Roboto, system-ui, sans-serif' }}>
+    <div className="flex overflow-hidden" style={{ height: 'calc(100vh - 4rem)', fontFamily: 'Roboto, system-ui, sans-serif' }}>
       {/* Hidden photo input */}
       <input ref={photoRef} type="file" accept="image/*" capture="environment"
         className="hidden" onChange={handlePhotoChange} />
 
-      {/* ── Main canvas area ── */}
+      {/* ── Canvas area ── */}
       <div className="relative flex-1 overflow-hidden" style={{ background: '#e8eaf6' }}>
 
         {/* Scrollable canvas */}
@@ -945,7 +1010,8 @@ export default function YardDesignerPage() {
                   {design.elements.filter(el => el.type !== 'property').map(el => (
                     <ElementShape key={el.id} el={el}
                       selected={el.id === selectedId && selectedPtIdx === null}
-                      onPointerDown={handleElementPointerDown} />
+                      onPointerDown={handleElementPointerDown}
+                      showLabel={el.type === 'structure' ? showStructureLabels : true} />
                   ))}
                 </g>
 
@@ -1022,211 +1088,6 @@ export default function YardDesignerPage() {
           </div>
         </div>
 
-        {/* Top-right: controls */}
-        <div className="absolute top-4 right-4 flex items-center gap-2">
-          {/* Zoom pill */}
-          <div className="bg-white rounded-xl flex items-center divide-x divide-gray-100 overflow-hidden"
-            style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.28)' }}>
-            <button onClick={() => setZoom(z => Math.max(0.25, +(z - 0.1).toFixed(1)))}
-              className="w-9 h-9 flex items-center justify-center hover:bg-gray-50 text-gray-600" title="Zoom out">
-              <ZoomOut className="w-4 h-4" />
-            </button>
-            <span className="px-2 text-xs font-medium text-gray-600 min-w-[3.5rem] text-center select-none">
-              {Math.round(zoom * 100)}%
-            </span>
-            <button onClick={() => setZoom(z => Math.min(3, +(z + 0.1).toFixed(1)))}
-              className="w-9 h-9 flex items-center justify-center hover:bg-gray-50 text-gray-600" title="Zoom in">
-              <ZoomIn className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Grid toggle */}
-          <button onClick={toggleGrid}
-            className="w-9 h-9 rounded-xl flex items-center justify-center transition-colors"
-            style={{
-              background: design.gridEnabled ? G_BLUE_LT : 'white',
-              color: design.gridEnabled ? G_BLUE : '#5f6368',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.28)',
-            }}
-            title={`Grid ${design.gridEnabled ? 'on' : 'off'}`}>
-            <Grid3X3 className="w-4 h-4" />
-          </button>
-
-          {/* Grid size (shown when grid is on) */}
-          {design.gridEnabled && (
-            <div className="bg-white rounded-xl overflow-hidden" style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.28)' }}>
-              <select className="text-xs px-2 py-2.5 bg-transparent text-gray-600 border-none outline-none cursor-pointer h-9"
-                value={design.gridSize}
-                onChange={e => save({ ...design, gridSize: Number(e.target.value) })}>
-                <option value={5}>5 ft</option>
-                <option value={10}>10 ft</option>
-                <option value={20}>20 ft</option>
-              </select>
-            </div>
-          )}
-
-          <div className="w-px h-6 bg-gray-300" />
-
-          {/* Clear */}
-          <button onClick={handleClear}
-            className="h-9 px-3 bg-white rounded-xl flex items-center gap-1.5 text-sm text-red-500 hover:bg-red-50 transition-colors"
-            style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.28)' }}>
-            <RotateCcw className="w-3.5 h-3.5" />
-            Clear
-          </button>
-
-          {/* Export dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setShowExportMenu(v => !v)}
-              className="h-9 px-3 bg-white rounded-xl flex items-center gap-1.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.28)' }}>
-              <Download className="w-3.5 h-3.5" />
-              Export
-              <ChevronDown className={`w-3 h-3 transition-transform ${showExportMenu ? 'rotate-180' : ''}`} />
-            </button>
-
-            {showExportMenu && (
-              <div
-                className="absolute top-11 right-0 bg-white rounded-2xl py-2 w-52 z-50"
-                style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
-                {/* Download section */}
-                <div className="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">Download</div>
-                <button onClick={() => { exportSvg(); setShowExportMenu(false); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                  <FileCode className="w-4 h-4 text-gray-400" />
-                  SVG — vector / scalable
-                </button>
-                <button onClick={() => { exportPng(); setShowExportMenu(false); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                  <FileImage className="w-4 h-4 text-gray-400" />
-                  PNG — 2× high-res
-                </button>
-
-                <div className="border-t border-gray-100 my-1.5" />
-
-                {/* Print section */}
-                <div className="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">Print</div>
-                {PRINT_SIZES.map(({ label, size }) => (
-                  <button key={size} onClick={() => { printDesign(size); setShowExportMenu(false); }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                    <Printer className="w-4 h-4 text-gray-400" />
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Save */}
-          <button onClick={handleSave}
-            className="h-9 px-4 rounded-xl flex items-center gap-1.5 text-sm text-white font-medium hover:opacity-90 transition-opacity"
-            style={{ background: G_BLUE, boxShadow: '0 2px 8px rgba(0,0,0,0.28)' }}>
-            <Save className="w-3.5 h-3.5" />
-            Save
-          </button>
-        </div>
-
-        {/* Left: floating tools panel */}
-        <div className="absolute top-1/2 -translate-y-1/2 left-4 flex flex-col gap-1 rounded-2xl p-2 bg-white"
-          style={{ boxShadow: '0 2px 12px rgba(0,0,0,0.28)' }}>
-
-          {/* Photo upload */}
-          <Tooltip label={backgroundImage ? 'Change yard photo' : 'Upload yard photo'}>
-            <button
-              onClick={() => photoRef.current?.click()}
-              className="w-10 h-10 rounded-xl flex items-center justify-center transition-colors relative"
-              style={{
-                background: backgroundImage ? '#e6f4ea' : undefined,
-                color: backgroundImage ? '#34a853' : '#5f6368',
-              }}>
-              <Camera className="w-5 h-5" />
-              {backgroundImage && (
-                <span
-                  onClick={e => { e.stopPropagation(); removeBackground(); }}
-                  className="absolute -top-1 -right-1 w-4 h-4 bg-white rounded-full border border-gray-200 flex items-center justify-center hover:bg-red-50 cursor-pointer"
-                  title="Remove photo">
-                  <X className="w-2.5 h-2.5 text-gray-400" />
-                </span>
-              )}
-            </button>
-          </Tooltip>
-
-          <div className="w-full h-px bg-gray-100 my-0.5" />
-
-          {TOOLS.map(tool => {
-            const isActive   = activeTool === tool.id;
-            const isDisabled = tool.requiresBorder && !hasYardBorder;
-            return (
-              <Tooltip key={tool.id} label={isDisabled ? 'Draw yard border first' : `${tool.label} — ${tool.desc}`}>
-                <button
-                  onClick={() => {
-                    if (isDisabled) { toast('Draw your yard border first', { icon: '📍' }); return; }
-                    setActiveTool(tool.id);
-                    setDrawingPoints([]);
-                    if (tool.id !== 'structure') setPendingStructureKind(null);
-                    if (tool.id === 'structure') setShowStructureMenu(s => !s);
-                    else setShowStructureMenu(false);
-                  }}
-                  className="w-10 h-10 rounded-xl flex items-center justify-center transition-all relative"
-                  style={{
-                    background: isActive ? G_BLUE : undefined,
-                    color: isActive ? 'white' : isDisabled ? '#bdbdbd' : '#5f6368',
-                    cursor: isDisabled ? 'not-allowed' : 'pointer',
-                  }}>
-                  <tool.icon className="w-5 h-5" />
-                  {tool.id === 'structure' && pendingStructureKind && (
-                    <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white"
-                      style={{ background: STRUCTURE_COLORS[pendingStructureKind].stroke }} />
-                  )}
-                </button>
-              </Tooltip>
-            );
-          })}
-        </div>
-
-        {/* Structure picker (floating card) */}
-        {showStructureMenu && (
-          <div className="absolute left-20 top-1/2 -translate-y-1/2 bg-white rounded-2xl p-3 w-48 z-40"
-            style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.22)' }}>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Structure</span>
-              <button onClick={() => setShowStructureMenu(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-1">
-              {(Object.keys(STRUCTURE_LABELS) as StructureKind[]).map(k => (
-                <button key={k}
-                  onClick={() => { setPendingStructureKind(k); setShowStructureMenu(false); setActiveTool('structure'); }}
-                  className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium text-left transition-colors"
-                  style={{
-                    background: pendingStructureKind === k ? G_BLUE_LT : undefined,
-                    color: pendingStructureKind === k ? G_BLUE : '#3c4043',
-                    border: `1px solid ${pendingStructureKind === k ? G_BLUE : '#e0e0e0'}`,
-                  }}>
-                  <span>{STRUCTURE_ICONS[k]}</span>
-                  <span>{STRUCTURE_LABELS[k]}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Properties panel (right side, slides in when element selected) */}
-        {selectedEl && (
-          <div className="absolute top-16 right-4 bg-white rounded-2xl p-4 w-60 z-40"
-            style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.2)', maxHeight: 'calc(100% - 5rem)', overflowY: 'auto' }}>
-            <PropertiesPanel
-              el={selectedEl}
-              onChange={updateSelected}
-              onDelete={deleteSelected}
-              selectedPtIdx={selectedPtIdx}
-              onDeletePt={ptIdx => handleDeletePoint(selectedEl.id, ptIdx)}
-            />
-          </div>
-        )}
-
         {/* Instruction pill */}
         {activeTool !== 'select' && (
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white rounded-full px-5 py-2.5
@@ -1300,6 +1161,363 @@ export default function YardDesignerPage() {
             </button>
           </div>
         )}
+      </div>
+
+      {/* ── Right sidebar ── */}
+      <div className="w-64 bg-white border-l border-gray-200 flex flex-col overflow-y-auto flex-shrink-0">
+
+        {/* Properties panel (shown when element selected) */}
+        {selectedEl && (
+          <div className="p-4 border-b border-gray-100">
+            <PropertiesPanel
+              el={selectedEl}
+              onChange={updateSelected}
+              onDelete={deleteSelected}
+              selectedPtIdx={selectedPtIdx}
+              onDeletePt={ptIdx => handleDeletePoint(selectedEl.id, ptIdx)}
+            />
+          </div>
+        )}
+
+        {/* ── Tools ── */}
+        <div className="p-3 border-b border-gray-100">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Tools</div>
+          <div className="flex flex-col gap-0.5">
+            {TOOLS.map(tool => {
+              const isActive   = activeTool === tool.id;
+              const isDisabled = tool.requiresBorder && !hasYardBorder;
+              return (
+                <button
+                  key={tool.id}
+                  onClick={() => {
+                    if (isDisabled) { toast('Draw your yard border first', { icon: '📍' }); return; }
+                    setActiveTool(tool.id);
+                    setDrawingPoints([]);
+                    if (tool.id !== 'structure') setPendingStructureKind(null);
+                  }}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all text-left w-full"
+                  style={{
+                    background: isActive ? G_BLUE : undefined,
+                    color: isActive ? 'white' : isDisabled ? '#bdbdbd' : '#3c4043',
+                    cursor: isDisabled ? 'not-allowed' : 'pointer',
+                  }}
+                  title={isDisabled ? 'Draw yard border first' : tool.desc}
+                >
+                  <tool.icon className="w-4 h-4 flex-shrink-0" />
+                  <span className="flex-1">{tool.label}</span>
+                  {tool.id === 'structure' && pendingStructureKind && (
+                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                      style={{ background: STRUCTURE_COLORS[pendingStructureKind].stroke }} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ── Structure type picker (inline, visible when Structure tool is active) ── */}
+        {activeTool === 'structure' && (
+          <div className="p-3 border-b border-gray-100">
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Structure Type</div>
+            <div className="grid grid-cols-2 gap-1">
+              {(Object.keys(STRUCTURE_LABELS) as StructureKind[]).map(k => (
+                <button key={k}
+                  onClick={() => setPendingStructureKind(k)}
+                  className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium text-left transition-colors"
+                  style={{
+                    background: pendingStructureKind === k ? G_BLUE_LT : undefined,
+                    color: pendingStructureKind === k ? G_BLUE : '#3c4043',
+                    border: `1px solid ${pendingStructureKind === k ? G_BLUE : '#e0e0e0'}`,
+                  }}>
+                  <span>{STRUCTURE_ICONS[k]}</span>
+                  <span>{STRUCTURE_LABELS[k]}</span>
+                </button>
+              ))}
+            </div>
+            {pendingStructureKind && (
+              <p className="mt-2 px-1 text-xs text-gray-400">
+                Click &amp; double-click on the canvas to draw a {STRUCTURE_LABELS[pendingStructureKind]}.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* ── Tree species picker ── */}
+        {activeTool === 'tree' && (
+          <div className="p-3 border-b border-gray-100">
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Tree Species</div>
+            <div className="grid grid-cols-2 gap-1 mb-1">
+              {TREE_SPECIES.map(s => (
+                <button key={s.name}
+                  onClick={() => { setSelectedTreeSpecies(s.name); setTreeCustomInput(null); }}
+                  className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium text-left transition-colors"
+                  style={{
+                    background: selectedTreeSpecies === s.name && treeCustomInput === null ? '#e8f5e9' : undefined,
+                    border: `1px solid ${selectedTreeSpecies === s.name && treeCustomInput === null ? '#2e7d32' : '#e0e0e0'}`,
+                    color: selectedTreeSpecies === s.name && treeCustomInput === null ? '#1b5e20' : '#3c4043',
+                  }}>
+                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />
+                  <span className="truncate">{s.name}</span>
+                </button>
+              ))}
+              <button
+                onClick={() => setTreeCustomInput(treeCustomInput === null ? '' : null)}
+                className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium text-left transition-colors col-span-2"
+                style={{
+                  background: treeCustomInput !== null ? '#e8f5e9' : undefined,
+                  border: `1px dashed ${treeCustomInput !== null ? '#2e7d32' : '#bdbdbd'}`,
+                  color: '#5f6368',
+                }}>
+                Custom…
+              </button>
+            </div>
+            {treeCustomInput !== null && (
+              <div className="flex gap-1 mt-1.5">
+                <input autoFocus
+                  className="flex-1 text-xs px-2 py-1.5 rounded-lg border border-gray-300 focus:outline-none focus:ring-1"
+                  style={{ '--tw-ring-color': G_BLUE } as React.CSSProperties}
+                  placeholder="Species name…"
+                  value={treeCustomInput}
+                  onChange={e => setTreeCustomInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && treeCustomInput.trim()) { setSelectedTreeSpecies(treeCustomInput.trim()); setTreeCustomInput(null); }
+                    if (e.key === 'Escape') setTreeCustomInput(null);
+                  }} />
+                <button
+                  onClick={() => { if (treeCustomInput.trim()) { setSelectedTreeSpecies(treeCustomInput.trim()); setTreeCustomInput(null); } }}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-white"
+                  style={{ background: G_BLUE }}>Set</button>
+              </div>
+            )}
+            <div className="mt-1.5 px-1 text-xs text-gray-400">
+              Placing: <span className="font-medium" style={{ color: TREE_SPECIES.find(s => s.name === selectedTreeSpecies)?.color ?? '#2e7d32' }}>
+                {selectedTreeSpecies}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* ── Plant species picker ── */}
+        {activeTool === 'plant' && (
+          <div className="p-3 border-b border-gray-100">
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Plant Species</div>
+            <div className="grid grid-cols-2 gap-1 mb-1">
+              {PLANT_SPECIES.map(s => (
+                <button key={s.name}
+                  onClick={() => { setSelectedPlantSpecies(s.name); setPlantCustomInput(null); }}
+                  className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium text-left transition-colors"
+                  style={{
+                    background: selectedPlantSpecies === s.name && plantCustomInput === null ? '#f1f8e9' : undefined,
+                    border: `1px solid ${selectedPlantSpecies === s.name && plantCustomInput === null ? '#558b2f' : '#e0e0e0'}`,
+                    color: selectedPlantSpecies === s.name && plantCustomInput === null ? '#33691e' : '#3c4043',
+                  }}>
+                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />
+                  <span className="truncate">{s.name}</span>
+                </button>
+              ))}
+              <button
+                onClick={() => setPlantCustomInput(plantCustomInput === null ? '' : null)}
+                className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium text-left transition-colors col-span-2"
+                style={{
+                  background: plantCustomInput !== null ? '#f1f8e9' : undefined,
+                  border: `1px dashed ${plantCustomInput !== null ? '#558b2f' : '#bdbdbd'}`,
+                  color: '#5f6368',
+                }}>
+                Custom…
+              </button>
+            </div>
+            {plantCustomInput !== null && (
+              <div className="flex gap-1 mt-1.5">
+                <input autoFocus
+                  className="flex-1 text-xs px-2 py-1.5 rounded-lg border border-gray-300 focus:outline-none focus:ring-1"
+                  style={{ '--tw-ring-color': G_BLUE } as React.CSSProperties}
+                  placeholder="Species name…"
+                  value={plantCustomInput}
+                  onChange={e => setPlantCustomInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && plantCustomInput.trim()) { setSelectedPlantSpecies(plantCustomInput.trim()); setPlantCustomInput(null); }
+                    if (e.key === 'Escape') setPlantCustomInput(null);
+                  }} />
+                <button
+                  onClick={() => { if (plantCustomInput.trim()) { setSelectedPlantSpecies(plantCustomInput.trim()); setPlantCustomInput(null); } }}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-white"
+                  style={{ background: G_BLUE }}>Set</button>
+              </div>
+            )}
+            <div className="mt-1.5 px-1 text-xs text-gray-400">
+              Placing: <span className="font-medium" style={{ color: PLANT_SPECIES.find(s => s.name === selectedPlantSpecies)?.color ?? '#558b2f' }}>
+                {selectedPlantSpecies}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* ── Canvas controls ── */}
+        <div className="p-3 border-b border-gray-100">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Canvas</div>
+
+          {/* Zoom */}
+          <div className="flex items-center gap-1.5 mb-2">
+            <button onClick={() => setZoom(z => Math.max(0.25, +(z - 0.1).toFixed(1)))}
+              className="w-8 h-8 rounded-lg flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors flex-shrink-0"
+              title="Zoom out">
+              <ZoomOut className="w-4 h-4" />
+            </button>
+            <span className="flex-1 text-xs text-center font-medium text-gray-600 select-none">
+              {Math.round(zoom * 100)}%
+            </span>
+            <button onClick={() => setZoom(z => Math.min(3, +(z + 0.1).toFixed(1)))}
+              className="w-8 h-8 rounded-lg flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors flex-shrink-0"
+              title="Zoom in">
+              <ZoomIn className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Grid */}
+          <div className="flex items-center gap-2">
+            <button onClick={toggleGrid}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+              style={{
+                background: design.gridEnabled ? G_BLUE_LT : '#f1f3f4',
+                color: design.gridEnabled ? G_BLUE : '#5f6368',
+              }}>
+              <Grid3X3 className="w-3.5 h-3.5" />
+              Grid
+            </button>
+            {design.gridEnabled && (
+              <select
+                className="flex-1 text-xs px-2 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-600 cursor-pointer"
+                value={design.gridSize}
+                onChange={e => save({ ...design, gridSize: Number(e.target.value) })}>
+                <option value={5}>5 ft</option>
+                <option value={10}>10 ft</option>
+                <option value={20}>20 ft</option>
+              </select>
+            )}
+          </div>
+        </div>
+
+        {/* ── Background photo ── */}
+        <div className="p-3 border-b border-gray-100">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Background</div>
+          <button
+            onClick={() => photoRef.current?.click()}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+            style={{
+              background: backgroundImage ? '#e6f4ea' : '#f1f3f4',
+              color: backgroundImage ? '#34a853' : '#3c4043',
+            }}>
+            <Camera className="w-4 h-4 flex-shrink-0" />
+            <span>{backgroundImage ? 'Change Photo' : 'Upload Photo'}</span>
+          </button>
+          {backgroundImage && (
+            <button
+              onClick={removeBackground}
+              className="w-full flex items-center gap-2 px-3 py-2 mt-1 rounded-lg text-sm text-red-500 hover:bg-red-50 transition-colors">
+              <X className="w-4 h-4 flex-shrink-0" />
+              <span>Remove Photo</span>
+            </button>
+          )}
+        </div>
+
+        {/* ── Actions ── */}
+        <div className="p-3 border-b border-gray-100">
+          <div className="flex gap-2">
+            <button onClick={handleSave}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium text-white hover:opacity-90 transition-opacity"
+              style={{ background: G_BLUE }}>
+              <Save className="w-4 h-4" />
+              Save
+            </button>
+            <button onClick={handleClear}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm text-red-500 bg-red-50 hover:bg-red-100 transition-colors">
+              <RotateCcw className="w-4 h-4" />
+              Clear
+            </button>
+          </div>
+        </div>
+
+        {/* ── Display options ── */}
+        <div className="p-3 border-b border-gray-100">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Display</div>
+          <button
+            onClick={() => setShowStructureLabels(v => !v)}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+            style={{
+              background: showStructureLabels ? G_BLUE_LT : '#f1f3f4',
+              color: showStructureLabels ? G_BLUE : '#5f6368',
+            }}>
+            <Tag className="w-4 h-4 flex-shrink-0" />
+            <span className="flex-1 text-left">Structure Labels</span>
+            <span className="text-xs font-medium opacity-70">{showStructureLabels ? 'ON' : 'OFF'}</span>
+          </button>
+        </div>
+
+        {/* ── Quick Add ── */}
+        <div className="p-3 border-b border-gray-100">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Quick Add</div>
+          <input
+            className="w-full text-xs px-2.5 py-2 rounded-lg border border-gray-200 mb-2 focus:outline-none focus:ring-1"
+            style={{ '--tw-ring-color': G_BLUE } as React.CSSProperties}
+            placeholder="Label (e.g. Garden Bed)"
+            value={quickAddLabel}
+            onChange={e => setQuickAddLabel(e.target.value)}
+          />
+          <div className="flex gap-2 mb-2">
+            <div className="flex-1">
+              <label className="text-xs text-gray-500 block mb-1">W (ft)</label>
+              <input type="number" min={1} max={500}
+                className="w-full text-xs px-2.5 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-1"
+                style={{ '--tw-ring-color': G_BLUE } as React.CSSProperties}
+                value={quickAddWidth}
+                onChange={e => setQuickAddWidth(Math.max(1, Number(e.target.value)))} />
+            </div>
+            <div className="flex-1">
+              <label className="text-xs text-gray-500 block mb-1">H (ft)</label>
+              <input type="number" min={1} max={500}
+                className="w-full text-xs px-2.5 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-1"
+                style={{ '--tw-ring-color': G_BLUE } as React.CSSProperties}
+                value={quickAddHeight}
+                onChange={e => setQuickAddHeight(Math.max(1, Number(e.target.value)))} />
+            </div>
+          </div>
+          <button
+            onClick={handleQuickAdd}
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors">
+            <Square className="w-4 h-4" />
+            Add Rectangle
+          </button>
+        </div>
+
+        {/* ── Download ── */}
+        <div className="p-3 border-b border-gray-100">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Download</div>
+          <button onClick={exportSvg}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors mb-1">
+            <FileCode className="w-4 h-4 text-gray-400 flex-shrink-0" />
+            SVG — vector / scalable
+          </button>
+          <button onClick={exportPng}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+            <FileImage className="w-4 h-4 text-gray-400 flex-shrink-0" />
+            PNG — 2× high-res
+          </button>
+        </div>
+
+        {/* ── Print ── */}
+        <div className="p-3">
+          <div className="flex items-center gap-1.5 mb-2 px-1">
+            <Printer className="w-3.5 h-3.5 text-gray-400" />
+            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Print</span>
+          </div>
+          {PRINT_SIZES.map(({ label, size }) => (
+            <button key={size} onClick={() => printDesign(size)}
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+              <Printer className="w-4 h-4 text-gray-400 flex-shrink-0" />
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {showLabelDialog && (
