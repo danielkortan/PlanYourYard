@@ -515,7 +515,6 @@ export default function YardDesignerPage() {
   const [showLabelDialog, setShowLabelDialog] = useState(false);
   const [pendingLabelPos, setPendingLabelPos] = useState<Pt | null>(null);
   const [zoom, setZoom]             = useState(1);
-  const [showStructureMenu, setShowStructureMenu] = useState(false);
   const [backgroundImage, setBackgroundImage] = useState<string | null>(loadBackground);
   const [selectedTreeSpecies, setSelectedTreeSpecies] = useState('Oak');
   const [selectedPlantSpecies, setSelectedPlantSpecies] = useState('Rose');
@@ -661,7 +660,7 @@ export default function YardDesignerPage() {
     if (activeTool === 'label') { setPendingLabelPos(pt); setShowLabelDialog(true); return; }
 
     if (['property', 'structure', 'path'].includes(activeTool)) {
-      if (activeTool === 'structure' && !pendingStructureKind) { setShowStructureMenu(true); return; }
+      if (activeTool === 'structure' && !pendingStructureKind) { return; }
       setDrawingPoints(prev => [...prev, pt]);
     }
   }, [activeTool, design, getSvgPt, pendingStructureKind, save, selectedTreeSpecies, selectedPlantSpecies]);
@@ -891,7 +890,7 @@ export default function YardDesignerPage() {
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'SELECT') return;
       if (e.key === 'Escape') {
         setDrawingPoints([]); setPendingStructureKind(null);
-        setActiveTool('select'); setShowStructureMenu(false);
+        setActiveTool('select');
         setSelectedPtIdx(null);
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -1195,8 +1194,6 @@ export default function YardDesignerPage() {
                     setActiveTool(tool.id);
                     setDrawingPoints([]);
                     if (tool.id !== 'structure') setPendingStructureKind(null);
-                    if (tool.id === 'structure') setShowStructureMenu(s => !s);
-                    else setShowStructureMenu(false);
                   }}
                   className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all text-left w-full"
                   style={{
@@ -1218,17 +1215,17 @@ export default function YardDesignerPage() {
           </div>
         </div>
 
-        {/* Structure picker — inline when structure tool active (full inline comes in Group 3) */}
-        {showStructureMenu && (
-          <div className="mx-3 mb-3 bg-gray-50 rounded-xl p-2.5 border border-gray-200">
-            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Structure Type</div>
+        {/* ── Structure type picker (inline, visible when Structure tool is active) ── */}
+        {activeTool === 'structure' && (
+          <div className="p-3 border-b border-gray-100">
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Structure Type</div>
             <div className="grid grid-cols-2 gap-1">
               {(Object.keys(STRUCTURE_LABELS) as StructureKind[]).map(k => (
                 <button key={k}
-                  onClick={() => { setPendingStructureKind(k); setShowStructureMenu(false); setActiveTool('structure'); }}
+                  onClick={() => setPendingStructureKind(k)}
                   className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium text-left transition-colors"
                   style={{
-                    background: pendingStructureKind === k ? G_BLUE_LT : 'white',
+                    background: pendingStructureKind === k ? G_BLUE_LT : undefined,
                     color: pendingStructureKind === k ? G_BLUE : '#3c4043',
                     border: `1px solid ${pendingStructureKind === k ? G_BLUE : '#e0e0e0'}`,
                   }}>
@@ -1237,6 +1234,11 @@ export default function YardDesignerPage() {
                 </button>
               ))}
             </div>
+            {pendingStructureKind && (
+              <p className="mt-2 px-1 text-xs text-gray-400">
+                Click &amp; double-click on the canvas to draw a {STRUCTURE_LABELS[pendingStructureKind]}.
+              </p>
+            )}
           </div>
         )}
 
@@ -1487,20 +1489,27 @@ export default function YardDesignerPage() {
           </button>
         </div>
 
-        {/* ── Export ── */}
-        <div className="p-3">
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Export</div>
+        {/* ── Download ── */}
+        <div className="p-3 border-b border-gray-100">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Download</div>
           <button onClick={exportSvg}
             className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors mb-1">
             <FileCode className="w-4 h-4 text-gray-400 flex-shrink-0" />
-            SVG — vector
+            SVG — vector / scalable
           </button>
           <button onClick={exportPng}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors mb-2">
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
             <FileImage className="w-4 h-4 text-gray-400 flex-shrink-0" />
             PNG — 2× high-res
           </button>
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1 px-1">Print</div>
+        </div>
+
+        {/* ── Print ── */}
+        <div className="p-3">
+          <div className="flex items-center gap-1.5 mb-2 px-1">
+            <Printer className="w-3.5 h-3.5 text-gray-400" />
+            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Print</span>
+          </div>
           {PRINT_SIZES.map(({ label, size }) => (
             <button key={size} onClick={() => printDesign(size)}
               className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
