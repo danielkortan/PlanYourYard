@@ -2,9 +2,9 @@ import React, { useState, useRef, useCallback, useEffect, PointerEvent } from 'r
 import toast from 'react-hot-toast';
 import {
   MousePointer2, Home, Trees, Flower2, Tag,
-  Save, RotateCcw, ZoomIn, ZoomOut, Download,
+  Save, RotateCcw, ZoomIn, ZoomOut,
   Square, Minus, Camera, X, ChevronRight,
-  Grid3X3, Pencil, ChevronDown, Printer, FileImage, FileCode,
+  Grid3X3, Pencil, Printer, FileImage, FileCode,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -485,7 +485,6 @@ export default function YardDesignerPage() {
   const [pendingLabelPos, setPendingLabelPos] = useState<Pt | null>(null);
   const [zoom, setZoom]             = useState(1);
   const [showStructureMenu, setShowStructureMenu] = useState(false);
-  const [showExportMenu, setShowExportMenu] = useState(false);
   const [backgroundImage, setBackgroundImage] = useState<string | null>(loadBackground);
 
   const svgRef    = useRef<SVGSVGElement>(null);
@@ -599,7 +598,6 @@ export default function YardDesignerPage() {
     if (activeTool === 'select') {
       setSelectedId(null);
       setSelectedPtIdx(null);
-      setShowExportMenu(false);
       return;
     }
 
@@ -826,7 +824,7 @@ export default function YardDesignerPage() {
       if (e.key === 'Escape') {
         setDrawingPoints([]); setPendingStructureKind(null);
         setActiveTool('select'); setShowStructureMenu(false);
-        setShowExportMenu(false); setSelectedPtIdx(null);
+        setSelectedPtIdx(null);
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedId) {
@@ -871,12 +869,12 @@ export default function YardDesignerPage() {
   ];
 
   return (
-    <div className="flex flex-col overflow-hidden" style={{ height: 'calc(100vh - 4rem)', fontFamily: 'Roboto, system-ui, sans-serif' }}>
+    <div className="flex overflow-hidden" style={{ height: 'calc(100vh - 4rem)', fontFamily: 'Roboto, system-ui, sans-serif' }}>
       {/* Hidden photo input */}
       <input ref={photoRef} type="file" accept="image/*" capture="environment"
         className="hidden" onChange={handlePhotoChange} />
 
-      {/* ── Main canvas area ── */}
+      {/* ── Canvas area ── */}
       <div className="relative flex-1 overflow-hidden" style={{ background: '#e8eaf6' }}>
 
         {/* Scrollable canvas */}
@@ -1022,211 +1020,6 @@ export default function YardDesignerPage() {
           </div>
         </div>
 
-        {/* Top-right: controls */}
-        <div className="absolute top-4 right-4 flex items-center gap-2">
-          {/* Zoom pill */}
-          <div className="bg-white rounded-xl flex items-center divide-x divide-gray-100 overflow-hidden"
-            style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.28)' }}>
-            <button onClick={() => setZoom(z => Math.max(0.25, +(z - 0.1).toFixed(1)))}
-              className="w-9 h-9 flex items-center justify-center hover:bg-gray-50 text-gray-600" title="Zoom out">
-              <ZoomOut className="w-4 h-4" />
-            </button>
-            <span className="px-2 text-xs font-medium text-gray-600 min-w-[3.5rem] text-center select-none">
-              {Math.round(zoom * 100)}%
-            </span>
-            <button onClick={() => setZoom(z => Math.min(3, +(z + 0.1).toFixed(1)))}
-              className="w-9 h-9 flex items-center justify-center hover:bg-gray-50 text-gray-600" title="Zoom in">
-              <ZoomIn className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Grid toggle */}
-          <button onClick={toggleGrid}
-            className="w-9 h-9 rounded-xl flex items-center justify-center transition-colors"
-            style={{
-              background: design.gridEnabled ? G_BLUE_LT : 'white',
-              color: design.gridEnabled ? G_BLUE : '#5f6368',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.28)',
-            }}
-            title={`Grid ${design.gridEnabled ? 'on' : 'off'}`}>
-            <Grid3X3 className="w-4 h-4" />
-          </button>
-
-          {/* Grid size (shown when grid is on) */}
-          {design.gridEnabled && (
-            <div className="bg-white rounded-xl overflow-hidden" style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.28)' }}>
-              <select className="text-xs px-2 py-2.5 bg-transparent text-gray-600 border-none outline-none cursor-pointer h-9"
-                value={design.gridSize}
-                onChange={e => save({ ...design, gridSize: Number(e.target.value) })}>
-                <option value={5}>5 ft</option>
-                <option value={10}>10 ft</option>
-                <option value={20}>20 ft</option>
-              </select>
-            </div>
-          )}
-
-          <div className="w-px h-6 bg-gray-300" />
-
-          {/* Clear */}
-          <button onClick={handleClear}
-            className="h-9 px-3 bg-white rounded-xl flex items-center gap-1.5 text-sm text-red-500 hover:bg-red-50 transition-colors"
-            style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.28)' }}>
-            <RotateCcw className="w-3.5 h-3.5" />
-            Clear
-          </button>
-
-          {/* Export dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setShowExportMenu(v => !v)}
-              className="h-9 px-3 bg-white rounded-xl flex items-center gap-1.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.28)' }}>
-              <Download className="w-3.5 h-3.5" />
-              Export
-              <ChevronDown className={`w-3 h-3 transition-transform ${showExportMenu ? 'rotate-180' : ''}`} />
-            </button>
-
-            {showExportMenu && (
-              <div
-                className="absolute top-11 right-0 bg-white rounded-2xl py-2 w-52 z-50"
-                style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
-                {/* Download section */}
-                <div className="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">Download</div>
-                <button onClick={() => { exportSvg(); setShowExportMenu(false); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                  <FileCode className="w-4 h-4 text-gray-400" />
-                  SVG — vector / scalable
-                </button>
-                <button onClick={() => { exportPng(); setShowExportMenu(false); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                  <FileImage className="w-4 h-4 text-gray-400" />
-                  PNG — 2× high-res
-                </button>
-
-                <div className="border-t border-gray-100 my-1.5" />
-
-                {/* Print section */}
-                <div className="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">Print</div>
-                {PRINT_SIZES.map(({ label, size }) => (
-                  <button key={size} onClick={() => { printDesign(size); setShowExportMenu(false); }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                    <Printer className="w-4 h-4 text-gray-400" />
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Save */}
-          <button onClick={handleSave}
-            className="h-9 px-4 rounded-xl flex items-center gap-1.5 text-sm text-white font-medium hover:opacity-90 transition-opacity"
-            style={{ background: G_BLUE, boxShadow: '0 2px 8px rgba(0,0,0,0.28)' }}>
-            <Save className="w-3.5 h-3.5" />
-            Save
-          </button>
-        </div>
-
-        {/* Left: floating tools panel */}
-        <div className="absolute top-1/2 -translate-y-1/2 left-4 flex flex-col gap-1 rounded-2xl p-2 bg-white"
-          style={{ boxShadow: '0 2px 12px rgba(0,0,0,0.28)' }}>
-
-          {/* Photo upload */}
-          <Tooltip label={backgroundImage ? 'Change yard photo' : 'Upload yard photo'}>
-            <button
-              onClick={() => photoRef.current?.click()}
-              className="w-10 h-10 rounded-xl flex items-center justify-center transition-colors relative"
-              style={{
-                background: backgroundImage ? '#e6f4ea' : undefined,
-                color: backgroundImage ? '#34a853' : '#5f6368',
-              }}>
-              <Camera className="w-5 h-5" />
-              {backgroundImage && (
-                <span
-                  onClick={e => { e.stopPropagation(); removeBackground(); }}
-                  className="absolute -top-1 -right-1 w-4 h-4 bg-white rounded-full border border-gray-200 flex items-center justify-center hover:bg-red-50 cursor-pointer"
-                  title="Remove photo">
-                  <X className="w-2.5 h-2.5 text-gray-400" />
-                </span>
-              )}
-            </button>
-          </Tooltip>
-
-          <div className="w-full h-px bg-gray-100 my-0.5" />
-
-          {TOOLS.map(tool => {
-            const isActive   = activeTool === tool.id;
-            const isDisabled = tool.requiresBorder && !hasYardBorder;
-            return (
-              <Tooltip key={tool.id} label={isDisabled ? 'Draw yard border first' : `${tool.label} — ${tool.desc}`}>
-                <button
-                  onClick={() => {
-                    if (isDisabled) { toast('Draw your yard border first', { icon: '📍' }); return; }
-                    setActiveTool(tool.id);
-                    setDrawingPoints([]);
-                    if (tool.id !== 'structure') setPendingStructureKind(null);
-                    if (tool.id === 'structure') setShowStructureMenu(s => !s);
-                    else setShowStructureMenu(false);
-                  }}
-                  className="w-10 h-10 rounded-xl flex items-center justify-center transition-all relative"
-                  style={{
-                    background: isActive ? G_BLUE : undefined,
-                    color: isActive ? 'white' : isDisabled ? '#bdbdbd' : '#5f6368',
-                    cursor: isDisabled ? 'not-allowed' : 'pointer',
-                  }}>
-                  <tool.icon className="w-5 h-5" />
-                  {tool.id === 'structure' && pendingStructureKind && (
-                    <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white"
-                      style={{ background: STRUCTURE_COLORS[pendingStructureKind].stroke }} />
-                  )}
-                </button>
-              </Tooltip>
-            );
-          })}
-        </div>
-
-        {/* Structure picker (floating card) */}
-        {showStructureMenu && (
-          <div className="absolute left-20 top-1/2 -translate-y-1/2 bg-white rounded-2xl p-3 w-48 z-40"
-            style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.22)' }}>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Structure</span>
-              <button onClick={() => setShowStructureMenu(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-1">
-              {(Object.keys(STRUCTURE_LABELS) as StructureKind[]).map(k => (
-                <button key={k}
-                  onClick={() => { setPendingStructureKind(k); setShowStructureMenu(false); setActiveTool('structure'); }}
-                  className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium text-left transition-colors"
-                  style={{
-                    background: pendingStructureKind === k ? G_BLUE_LT : undefined,
-                    color: pendingStructureKind === k ? G_BLUE : '#3c4043',
-                    border: `1px solid ${pendingStructureKind === k ? G_BLUE : '#e0e0e0'}`,
-                  }}>
-                  <span>{STRUCTURE_ICONS[k]}</span>
-                  <span>{STRUCTURE_LABELS[k]}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Properties panel (right side, slides in when element selected) */}
-        {selectedEl && (
-          <div className="absolute top-16 right-4 bg-white rounded-2xl p-4 w-60 z-40"
-            style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.2)', maxHeight: 'calc(100% - 5rem)', overflowY: 'auto' }}>
-            <PropertiesPanel
-              el={selectedEl}
-              onChange={updateSelected}
-              onDelete={deleteSelected}
-              selectedPtIdx={selectedPtIdx}
-              onDeletePt={ptIdx => handleDeletePoint(selectedEl.id, ptIdx)}
-            />
-          </div>
-        )}
-
         {/* Instruction pill */}
         {activeTool !== 'select' && (
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white rounded-full px-5 py-2.5
@@ -1300,6 +1093,191 @@ export default function YardDesignerPage() {
             </button>
           </div>
         )}
+      </div>
+
+      {/* ── Right sidebar ── */}
+      <div className="w-64 bg-white border-l border-gray-200 flex flex-col overflow-y-auto flex-shrink-0">
+
+        {/* Properties panel (shown when element selected) */}
+        {selectedEl && (
+          <div className="p-4 border-b border-gray-100">
+            <PropertiesPanel
+              el={selectedEl}
+              onChange={updateSelected}
+              onDelete={deleteSelected}
+              selectedPtIdx={selectedPtIdx}
+              onDeletePt={ptIdx => handleDeletePoint(selectedEl.id, ptIdx)}
+            />
+          </div>
+        )}
+
+        {/* ── Tools ── */}
+        <div className="p-3 border-b border-gray-100">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Tools</div>
+          <div className="flex flex-col gap-0.5">
+            {TOOLS.map(tool => {
+              const isActive   = activeTool === tool.id;
+              const isDisabled = tool.requiresBorder && !hasYardBorder;
+              return (
+                <button
+                  key={tool.id}
+                  onClick={() => {
+                    if (isDisabled) { toast('Draw your yard border first', { icon: '📍' }); return; }
+                    setActiveTool(tool.id);
+                    setDrawingPoints([]);
+                    if (tool.id !== 'structure') setPendingStructureKind(null);
+                    if (tool.id === 'structure') setShowStructureMenu(s => !s);
+                    else setShowStructureMenu(false);
+                  }}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all text-left w-full"
+                  style={{
+                    background: isActive ? G_BLUE : undefined,
+                    color: isActive ? 'white' : isDisabled ? '#bdbdbd' : '#3c4043',
+                    cursor: isDisabled ? 'not-allowed' : 'pointer',
+                  }}
+                  title={isDisabled ? 'Draw yard border first' : tool.desc}
+                >
+                  <tool.icon className="w-4 h-4 flex-shrink-0" />
+                  <span className="flex-1">{tool.label}</span>
+                  {tool.id === 'structure' && pendingStructureKind && (
+                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                      style={{ background: STRUCTURE_COLORS[pendingStructureKind].stroke }} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Structure picker — inline when structure tool active (full inline comes in Group 3) */}
+        {showStructureMenu && (
+          <div className="mx-3 mb-3 bg-gray-50 rounded-xl p-2.5 border border-gray-200">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Structure Type</div>
+            <div className="grid grid-cols-2 gap-1">
+              {(Object.keys(STRUCTURE_LABELS) as StructureKind[]).map(k => (
+                <button key={k}
+                  onClick={() => { setPendingStructureKind(k); setShowStructureMenu(false); setActiveTool('structure'); }}
+                  className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium text-left transition-colors"
+                  style={{
+                    background: pendingStructureKind === k ? G_BLUE_LT : 'white',
+                    color: pendingStructureKind === k ? G_BLUE : '#3c4043',
+                    border: `1px solid ${pendingStructureKind === k ? G_BLUE : '#e0e0e0'}`,
+                  }}>
+                  <span>{STRUCTURE_ICONS[k]}</span>
+                  <span>{STRUCTURE_LABELS[k]}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Canvas controls ── */}
+        <div className="p-3 border-b border-gray-100">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Canvas</div>
+
+          {/* Zoom */}
+          <div className="flex items-center gap-1.5 mb-2">
+            <button onClick={() => setZoom(z => Math.max(0.25, +(z - 0.1).toFixed(1)))}
+              className="w-8 h-8 rounded-lg flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors flex-shrink-0"
+              title="Zoom out">
+              <ZoomOut className="w-4 h-4" />
+            </button>
+            <span className="flex-1 text-xs text-center font-medium text-gray-600 select-none">
+              {Math.round(zoom * 100)}%
+            </span>
+            <button onClick={() => setZoom(z => Math.min(3, +(z + 0.1).toFixed(1)))}
+              className="w-8 h-8 rounded-lg flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors flex-shrink-0"
+              title="Zoom in">
+              <ZoomIn className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Grid */}
+          <div className="flex items-center gap-2">
+            <button onClick={toggleGrid}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+              style={{
+                background: design.gridEnabled ? G_BLUE_LT : '#f1f3f4',
+                color: design.gridEnabled ? G_BLUE : '#5f6368',
+              }}>
+              <Grid3X3 className="w-3.5 h-3.5" />
+              Grid
+            </button>
+            {design.gridEnabled && (
+              <select
+                className="flex-1 text-xs px-2 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-600 cursor-pointer"
+                value={design.gridSize}
+                onChange={e => save({ ...design, gridSize: Number(e.target.value) })}>
+                <option value={5}>5 ft</option>
+                <option value={10}>10 ft</option>
+                <option value={20}>20 ft</option>
+              </select>
+            )}
+          </div>
+        </div>
+
+        {/* ── Background photo ── */}
+        <div className="p-3 border-b border-gray-100">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Background</div>
+          <button
+            onClick={() => photoRef.current?.click()}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+            style={{
+              background: backgroundImage ? '#e6f4ea' : '#f1f3f4',
+              color: backgroundImage ? '#34a853' : '#3c4043',
+            }}>
+            <Camera className="w-4 h-4 flex-shrink-0" />
+            <span>{backgroundImage ? 'Change Photo' : 'Upload Photo'}</span>
+          </button>
+          {backgroundImage && (
+            <button
+              onClick={removeBackground}
+              className="w-full flex items-center gap-2 px-3 py-2 mt-1 rounded-lg text-sm text-red-500 hover:bg-red-50 transition-colors">
+              <X className="w-4 h-4 flex-shrink-0" />
+              <span>Remove Photo</span>
+            </button>
+          )}
+        </div>
+
+        {/* ── Actions ── */}
+        <div className="p-3 border-b border-gray-100">
+          <div className="flex gap-2">
+            <button onClick={handleSave}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium text-white hover:opacity-90 transition-opacity"
+              style={{ background: G_BLUE }}>
+              <Save className="w-4 h-4" />
+              Save
+            </button>
+            <button onClick={handleClear}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm text-red-500 bg-red-50 hover:bg-red-100 transition-colors">
+              <RotateCcw className="w-4 h-4" />
+              Clear
+            </button>
+          </div>
+        </div>
+
+        {/* ── Export ── */}
+        <div className="p-3">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Export</div>
+          <button onClick={exportSvg}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors mb-1">
+            <FileCode className="w-4 h-4 text-gray-400 flex-shrink-0" />
+            SVG — vector
+          </button>
+          <button onClick={exportPng}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors mb-2">
+            <FileImage className="w-4 h-4 text-gray-400 flex-shrink-0" />
+            PNG — 2× high-res
+          </button>
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1 px-1">Print</div>
+          {PRINT_SIZES.map(({ label, size }) => (
+            <button key={size} onClick={() => printDesign(size)}
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+              <Printer className="w-4 h-4 text-gray-400 flex-shrink-0" />
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {showLabelDialog && (
