@@ -1,5 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect, PointerEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import axios from 'axios';
 import toast from 'react-hot-toast';
+import { useAuth } from '../contexts/AuthContext';
 import {
   MousePointer2, Home, Trees, Flower2, Tag,
   Save, RotateCcw, ZoomIn, ZoomOut,
@@ -505,6 +508,10 @@ const TOOLS: { id: ToolType; label: string; icon: React.ComponentType<{ classNam
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function YardDesignerPage() {
+  const [searchParams] = useSearchParams();
+  const projectId = searchParams.get('project');
+  const { user } = useAuth();
+
   const [design, setDesign]         = useState<YardDesign>(loadDesign);
   const [activeTool, setActiveTool] = useState<ToolType>('select');
   const [pendingStructureKind, setPendingStructureKind] = useState<StructureKind | null>(null);
@@ -516,6 +523,7 @@ export default function YardDesignerPage() {
   const [pendingLabelPos, setPendingLabelPos] = useState<Pt | null>(null);
   const [zoom, setZoom]             = useState(1);
   const [backgroundImage, setBackgroundImage] = useState<string | null>(loadBackground);
+  const [projectName, setProjectName] = useState<string | null>(null);
   const [selectedTreeSpecies, setSelectedTreeSpecies] = useState('Oak');
   const [selectedPlantSpecies, setSelectedPlantSpecies] = useState('Rose');
   const [treeCustomInput, setTreeCustomInput] = useState<string | null>(null);
@@ -546,6 +554,23 @@ export default function YardDesignerPage() {
 
   // Clear selectedPtIdx when selection changes
   useEffect(() => { setSelectedPtIdx(null); }, [selectedId]);
+
+  // Load design from server project when ?project=<id> is present
+  useEffect(() => {
+    if (!projectId || !user) return;
+    const token = localStorage.getItem('pyy_token');
+    axios.get(`/api/projects/${projectId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then(res => {
+      const proj = res.data;
+      setProjectName(proj.name || null);
+      if (proj.design && typeof proj.design === 'object') {
+        setDesign({ ...defaultDesign(), ...proj.design });
+      }
+    }).catch(() => {
+      toast.error('Could not load project design');
+    });
+  }, [projectId, user]);
 
   // ── SVG coordinate mapping ──
   // Uses getScreenCTM for pixel-perfect accuracy regardless of zoom, scroll, or transforms.
@@ -857,7 +882,18 @@ export default function YardDesignerPage() {
     toast('Canvas cleared');
   };
 
-  const handleSave = () => { saveDesign(design); toast.success('Design saved!'); };
+  const handleSave = () => {
+    saveDesign(design);
+    if (projectId && user) {
+      const token = localStorage.getItem('pyy_token');
+      axios.patch(`/api/projects/${projectId}`, { design }, {
+        headers: { Authorization: `Bearer ${token}` },
+      }).then(() => toast.success('Design saved to project!'))
+        .catch(() => toast.error('Could not save to project'));
+    } else {
+      toast.success('Design saved!');
+    }
+  };
 
   // ── Quick Add ──
   const handleQuickAdd = () => {
@@ -1108,7 +1144,7 @@ export default function YardDesignerPage() {
         )}
 
         {/* Getting-started overlay */}
-        {!backgroundImage && design.elements.length === 0 && (
+        {!backgroundImage && design.elements.length === 0 && activeTool === 'select' && (
           <div className="absolute inset-0 flex items-center justify-center" style={{ background: 'rgba(232,234,246,0.4)' }}>
             <div className="bg-white rounded-3xl p-8 max-w-sm text-center"
               style={{ boxShadow: '0 8px 40px rgba(0,0,0,0.18)' }}>
@@ -1165,6 +1201,14 @@ export default function YardDesignerPage() {
 
       {/* ── Right sidebar ── */}
       <div className="w-64 bg-white border-l border-gray-200 flex flex-col overflow-y-auto flex-shrink-0">
+
+        {/* Project indicator */}
+        {projectName && (
+          <div className="px-4 py-2.5 border-b border-blue-100 bg-blue-50 flex-shrink-0">
+            <div className="text-xs text-blue-500 mb-0.5 font-medium uppercase tracking-wide">Project</div>
+            <div className="text-sm font-semibold text-blue-800 truncate">{projectName}</div>
+          </div>
+        )}
 
         {/* Properties panel (shown when element selected) */}
         {selectedEl && (
