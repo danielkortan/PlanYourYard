@@ -67,6 +67,36 @@ const STRUCTURE_ICONS: Record<StructureKind, string> = {
   pool: '🏊', fence: '🪜', shed: '🏚', other: '📦',
 };
 
+const TREE_SPECIES: { name: string; color: string }[] = [
+  { name: 'Oak',       color: '#5d4037' },
+  { name: 'Maple',     color: '#bf360c' },
+  { name: 'Pine',      color: '#1b5e20' },
+  { name: 'Cherry',    color: '#ad1457' },
+  { name: 'Apple',     color: '#558b2f' },
+  { name: 'Birch',     color: '#f9a825' },
+  { name: 'Willow',    color: '#827717' },
+  { name: 'Elm',       color: '#2e7d32' },
+  { name: 'Dogwood',   color: '#e91e63' },
+  { name: 'Magnolia',  color: '#6a1b9a' },
+  { name: 'Redbud',    color: '#c62828' },
+  { name: 'Spruce',    color: '#004d40' },
+];
+
+const PLANT_SPECIES: { name: string; color: string }[] = [
+  { name: 'Rose',             color: '#c62828' },
+  { name: 'Hydrangea',        color: '#5c6bc0' },
+  { name: 'Lavender',         color: '#7b1fa2' },
+  { name: 'Boxwood',          color: '#33691e' },
+  { name: 'Azalea',           color: '#e91e63' },
+  { name: 'Hosta',            color: '#558b2f' },
+  { name: 'Fern',             color: '#2e7d32' },
+  { name: 'Ornamental Grass', color: '#f9a825' },
+  { name: 'Daylily',          color: '#ff6f00' },
+  { name: 'Coneflower',       color: '#ad1457' },
+  { name: 'Spirea',           color: '#4a148c' },
+  { name: 'Shrub',            color: '#1b5e20' },
+];
+
 const defaultDesign = (): YardDesign => ({
   elements: [],
   gridEnabled: true,
@@ -151,9 +181,10 @@ function GridLayer({ widthPx, heightPx, pxPerFt, gridSize, overPhoto }: {
 
 // ─── Element Renderer ─────────────────────────────────────────────────────────
 
-function ElementShape({ el, selected, onPointerDown }: {
+function ElementShape({ el, selected, onPointerDown, showLabel = true }: {
   el: DesignElement; selected: boolean;
   onPointerDown: (e: PointerEvent<SVGElement>, id: string) => void;
+  showLabel?: boolean;
 }) {
   const selGlow = selected ? { filter: 'drop-shadow(0 0 4px rgba(26,115,232,0.7))' } : {};
 
@@ -176,7 +207,7 @@ function ElementShape({ el, selected, onPointerDown }: {
           stroke={el.color || stroke} strokeWidth={2} strokeLinejoin="round"
           fill={el.fill || fill} fillOpacity={el.opacity ?? 0.88}
           style={{ cursor: 'move' }} />
-        {el.label && ctr && (
+        {showLabel && el.label && ctr && (
           <text x={ctr.x} y={ctr.y} textAnchor="middle" dominantBaseline="middle"
             fontSize={11} fontWeight="600" fill={stroke}
             style={{ pointerEvents: 'none', userSelect: 'none', fontFamily: 'Roboto, sans-serif' }}>
@@ -486,6 +517,14 @@ export default function YardDesignerPage() {
   const [zoom, setZoom]             = useState(1);
   const [showStructureMenu, setShowStructureMenu] = useState(false);
   const [backgroundImage, setBackgroundImage] = useState<string | null>(loadBackground);
+  const [selectedTreeSpecies, setSelectedTreeSpecies] = useState('Oak');
+  const [selectedPlantSpecies, setSelectedPlantSpecies] = useState('Rose');
+  const [treeCustomInput, setTreeCustomInput] = useState<string | null>(null);
+  const [plantCustomInput, setPlantCustomInput] = useState<string | null>(null);
+  const [showStructureLabels, setShowStructureLabels] = useState(true);
+  const [quickAddLabel, setQuickAddLabel] = useState('');
+  const [quickAddWidth, setQuickAddWidth] = useState(20);
+  const [quickAddHeight, setQuickAddHeight] = useState(15);
 
   const svgRef    = useRef<SVGSVGElement>(null);
   const photoRef  = useRef<HTMLInputElement>(null);
@@ -603,12 +642,16 @@ export default function YardDesignerPage() {
 
     if (activeTool === 'tree' || activeTool === 'plant') {
       const isTree = activeTool === 'tree';
+      const speciesName = isTree ? selectedTreeSpecies : selectedPlantSpecies;
+      const speciesColor = isTree
+        ? (TREE_SPECIES.find(s => s.name === speciesName)?.color ?? '#2e7d32')
+        : (PLANT_SPECIES.find(s => s.name === speciesName)?.color ?? '#558b2f');
       const el: DesignElement = {
         id: uid(), type: activeTool,
         cx: pt.x, cy: pt.y,
         radius: isTree ? 18 : 9,
-        label: isTree ? 'Tree' : 'Plant',
-        color: isTree ? '#2e7d32' : '#558b2f',
+        label: speciesName,
+        color: speciesColor,
       };
       save({ ...design, elements: [...design.elements, el] });
       setSelectedId(el.id);
@@ -621,7 +664,7 @@ export default function YardDesignerPage() {
       if (activeTool === 'structure' && !pendingStructureKind) { setShowStructureMenu(true); return; }
       setDrawingPoints(prev => [...prev, pt]);
     }
-  }, [activeTool, design, getSvgPt, pendingStructureKind, save]);
+  }, [activeTool, design, getSvgPt, pendingStructureKind, save, selectedTreeSpecies, selectedPlantSpecies]);
 
   // ── Double-click: close polygon ──
   const handleSvgDblClick = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
@@ -817,6 +860,31 @@ export default function YardDesignerPage() {
 
   const handleSave = () => { saveDesign(design); toast.success('Design saved!'); };
 
+  // ── Quick Add ──
+  const handleQuickAdd = () => {
+    const wPx = quickAddWidth * design.pixelsPerFoot;
+    const hPx = quickAddHeight * design.pixelsPerFoot;
+    const cx  = widthPx / 2;
+    const cy  = heightPx / 2;
+    const points: Pt[] = [
+      { x: cx - wPx / 2, y: cy - hPx / 2 },
+      { x: cx + wPx / 2, y: cy - hPx / 2 },
+      { x: cx + wPx / 2, y: cy + hPx / 2 },
+      { x: cx - wPx / 2, y: cy + hPx / 2 },
+    ];
+    const sk = pendingStructureKind || 'other';
+    const { stroke, fill } = STRUCTURE_COLORS[sk];
+    const el: DesignElement = {
+      id: uid(), type: 'structure', points,
+      structureKind: sk,
+      label: quickAddLabel.trim() || STRUCTURE_LABELS[sk],
+      color: stroke, fill,
+    };
+    save({ ...design, elements: [...design.elements, el] });
+    setSelectedId(el.id);
+    toast.success(`${el.label} added`);
+  };
+
   // ── Keyboard shortcuts ──
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -943,7 +1011,8 @@ export default function YardDesignerPage() {
                   {design.elements.filter(el => el.type !== 'property').map(el => (
                     <ElementShape key={el.id} el={el}
                       selected={el.id === selectedId && selectedPtIdx === null}
-                      onPointerDown={handleElementPointerDown} />
+                      onPointerDown={handleElementPointerDown}
+                      showLabel={el.type === 'structure' ? showStructureLabels : true} />
                   ))}
                 </g>
 
@@ -1171,6 +1240,116 @@ export default function YardDesignerPage() {
           </div>
         )}
 
+        {/* ── Tree species picker ── */}
+        {activeTool === 'tree' && (
+          <div className="p-3 border-b border-gray-100">
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Tree Species</div>
+            <div className="grid grid-cols-2 gap-1 mb-1">
+              {TREE_SPECIES.map(s => (
+                <button key={s.name}
+                  onClick={() => { setSelectedTreeSpecies(s.name); setTreeCustomInput(null); }}
+                  className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium text-left transition-colors"
+                  style={{
+                    background: selectedTreeSpecies === s.name && treeCustomInput === null ? '#e8f5e9' : undefined,
+                    border: `1px solid ${selectedTreeSpecies === s.name && treeCustomInput === null ? '#2e7d32' : '#e0e0e0'}`,
+                    color: selectedTreeSpecies === s.name && treeCustomInput === null ? '#1b5e20' : '#3c4043',
+                  }}>
+                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />
+                  <span className="truncate">{s.name}</span>
+                </button>
+              ))}
+              <button
+                onClick={() => setTreeCustomInput(treeCustomInput === null ? '' : null)}
+                className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium text-left transition-colors col-span-2"
+                style={{
+                  background: treeCustomInput !== null ? '#e8f5e9' : undefined,
+                  border: `1px dashed ${treeCustomInput !== null ? '#2e7d32' : '#bdbdbd'}`,
+                  color: '#5f6368',
+                }}>
+                Custom…
+              </button>
+            </div>
+            {treeCustomInput !== null && (
+              <div className="flex gap-1 mt-1.5">
+                <input autoFocus
+                  className="flex-1 text-xs px-2 py-1.5 rounded-lg border border-gray-300 focus:outline-none focus:ring-1"
+                  style={{ '--tw-ring-color': G_BLUE } as React.CSSProperties}
+                  placeholder="Species name…"
+                  value={treeCustomInput}
+                  onChange={e => setTreeCustomInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && treeCustomInput.trim()) { setSelectedTreeSpecies(treeCustomInput.trim()); setTreeCustomInput(null); }
+                    if (e.key === 'Escape') setTreeCustomInput(null);
+                  }} />
+                <button
+                  onClick={() => { if (treeCustomInput.trim()) { setSelectedTreeSpecies(treeCustomInput.trim()); setTreeCustomInput(null); } }}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-white"
+                  style={{ background: G_BLUE }}>Set</button>
+              </div>
+            )}
+            <div className="mt-1.5 px-1 text-xs text-gray-400">
+              Placing: <span className="font-medium" style={{ color: TREE_SPECIES.find(s => s.name === selectedTreeSpecies)?.color ?? '#2e7d32' }}>
+                {selectedTreeSpecies}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* ── Plant species picker ── */}
+        {activeTool === 'plant' && (
+          <div className="p-3 border-b border-gray-100">
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Plant Species</div>
+            <div className="grid grid-cols-2 gap-1 mb-1">
+              {PLANT_SPECIES.map(s => (
+                <button key={s.name}
+                  onClick={() => { setSelectedPlantSpecies(s.name); setPlantCustomInput(null); }}
+                  className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium text-left transition-colors"
+                  style={{
+                    background: selectedPlantSpecies === s.name && plantCustomInput === null ? '#f1f8e9' : undefined,
+                    border: `1px solid ${selectedPlantSpecies === s.name && plantCustomInput === null ? '#558b2f' : '#e0e0e0'}`,
+                    color: selectedPlantSpecies === s.name && plantCustomInput === null ? '#33691e' : '#3c4043',
+                  }}>
+                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />
+                  <span className="truncate">{s.name}</span>
+                </button>
+              ))}
+              <button
+                onClick={() => setPlantCustomInput(plantCustomInput === null ? '' : null)}
+                className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium text-left transition-colors col-span-2"
+                style={{
+                  background: plantCustomInput !== null ? '#f1f8e9' : undefined,
+                  border: `1px dashed ${plantCustomInput !== null ? '#558b2f' : '#bdbdbd'}`,
+                  color: '#5f6368',
+                }}>
+                Custom…
+              </button>
+            </div>
+            {plantCustomInput !== null && (
+              <div className="flex gap-1 mt-1.5">
+                <input autoFocus
+                  className="flex-1 text-xs px-2 py-1.5 rounded-lg border border-gray-300 focus:outline-none focus:ring-1"
+                  style={{ '--tw-ring-color': G_BLUE } as React.CSSProperties}
+                  placeholder="Species name…"
+                  value={plantCustomInput}
+                  onChange={e => setPlantCustomInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && plantCustomInput.trim()) { setSelectedPlantSpecies(plantCustomInput.trim()); setPlantCustomInput(null); }
+                    if (e.key === 'Escape') setPlantCustomInput(null);
+                  }} />
+                <button
+                  onClick={() => { if (plantCustomInput.trim()) { setSelectedPlantSpecies(plantCustomInput.trim()); setPlantCustomInput(null); } }}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-white"
+                  style={{ background: G_BLUE }}>Set</button>
+              </div>
+            )}
+            <div className="mt-1.5 px-1 text-xs text-gray-400">
+              Placing: <span className="font-medium" style={{ color: PLANT_SPECIES.find(s => s.name === selectedPlantSpecies)?.color ?? '#558b2f' }}>
+                {selectedPlantSpecies}
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* ── Canvas controls ── */}
         <div className="p-3 border-b border-gray-100">
           <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Canvas</div>
@@ -1254,6 +1433,58 @@ export default function YardDesignerPage() {
               Clear
             </button>
           </div>
+        </div>
+
+        {/* ── Display options ── */}
+        <div className="p-3 border-b border-gray-100">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Display</div>
+          <button
+            onClick={() => setShowStructureLabels(v => !v)}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+            style={{
+              background: showStructureLabels ? G_BLUE_LT : '#f1f3f4',
+              color: showStructureLabels ? G_BLUE : '#5f6368',
+            }}>
+            <Tag className="w-4 h-4 flex-shrink-0" />
+            <span className="flex-1 text-left">Structure Labels</span>
+            <span className="text-xs font-medium opacity-70">{showStructureLabels ? 'ON' : 'OFF'}</span>
+          </button>
+        </div>
+
+        {/* ── Quick Add ── */}
+        <div className="p-3 border-b border-gray-100">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Quick Add</div>
+          <input
+            className="w-full text-xs px-2.5 py-2 rounded-lg border border-gray-200 mb-2 focus:outline-none focus:ring-1"
+            style={{ '--tw-ring-color': G_BLUE } as React.CSSProperties}
+            placeholder="Label (e.g. Garden Bed)"
+            value={quickAddLabel}
+            onChange={e => setQuickAddLabel(e.target.value)}
+          />
+          <div className="flex gap-2 mb-2">
+            <div className="flex-1">
+              <label className="text-xs text-gray-500 block mb-1">W (ft)</label>
+              <input type="number" min={1} max={500}
+                className="w-full text-xs px-2.5 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-1"
+                style={{ '--tw-ring-color': G_BLUE } as React.CSSProperties}
+                value={quickAddWidth}
+                onChange={e => setQuickAddWidth(Math.max(1, Number(e.target.value)))} />
+            </div>
+            <div className="flex-1">
+              <label className="text-xs text-gray-500 block mb-1">H (ft)</label>
+              <input type="number" min={1} max={500}
+                className="w-full text-xs px-2.5 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-1"
+                style={{ '--tw-ring-color': G_BLUE } as React.CSSProperties}
+                value={quickAddHeight}
+                onChange={e => setQuickAddHeight(Math.max(1, Number(e.target.value)))} />
+            </div>
+          </div>
+          <button
+            onClick={handleQuickAdd}
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors">
+            <Square className="w-4 h-4" />
+            Add Rectangle
+          </button>
         </div>
 
         {/* ── Export ── */}
