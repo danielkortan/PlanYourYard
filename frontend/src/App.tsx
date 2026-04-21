@@ -2,13 +2,10 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { ReactNode } from 'react';
 import Header from './components/Header';
-import HomePage from './pages/HomePage';
-import PlannerPage from './pages/PlannerPage';
 import PlantsPage from './pages/PlantsPage';
 import VisualizePage from './pages/VisualizePage';
 import LoginPage from './pages/LoginPage';
 import ProjectsPage from './pages/ProjectsPage';
-import ProjectDetailPage from './pages/ProjectDetailPage';
 import AdminPage from './pages/AdminPage';
 import YardDesignerPage from './pages/YardDesignerPage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -27,16 +24,14 @@ function AppRoutes() {
       <Header />
       <main className="flex-1">
         <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/planner" element={<PlannerPage />} />
+          <Route path="/" element={<Navigate to="/designer" replace />} />
           <Route path="/designer" element={<YardDesignerPage />} />
           <Route path="/plants" element={<PlantsPage />} />
           <Route path="/visualize" element={<VisualizePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/projects" element={<ProtectedRoute><ProjectsPage /></ProtectedRoute>} />
-          <Route path="/projects/:id" element={<ProtectedRoute><ProjectDetailPage /></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute adminOnly><AdminPage /></ProtectedRoute>} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="/designer" replace />} />
         </Routes>
       </main>
       <Toaster

@@ -1,11 +1,9 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Leaf, Map, TreePine, Eye, Menu, X, Folder, Shield, LogOut, LogIn, User, ChevronDown, PencilRuler } from 'lucide-react';
+import { Leaf, TreePine, Eye, Menu, X, Folder, Shield, LogOut, LogIn, User, ChevronDown, PencilRuler } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
 const navItems = [
-  { to: '/', label: 'Home', icon: Leaf },
-  { to: '/planner', label: 'Yard Planner', icon: Map },
   { to: '/designer', label: 'Yard Designer', icon: PencilRuler },
   { to: '/plants', label: 'Plant Library', icon: TreePine },
   { to: '/visualize', label: 'AI Visualizer', icon: Eye },
@@ -78,7 +76,7 @@ export default function Header() {
                 }`}
               >
                 <Folder className="w-4 h-4" />
-                My Projects
+                My Designs
               </Link>
             )}
           </nav>
@@ -110,7 +108,7 @@ export default function Header() {
                       onClick={() => setUserMenuOpen(false)}
                       className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                     >
-                      <Folder className="w-4 h-4 text-gray-400" /> My Projects
+                      <Folder className="w-4 h-4 text-gray-400" /> My Designs
                     </Link>
                     {user.role === 'admin' && (
                       <Link
@@ -181,7 +179,7 @@ export default function Header() {
                   location.pathname.startsWith('/projects') ? 'bg-forest-600 text-white' : 'text-forest-100 hover:bg-forest-700'
                 }`}
               >
-                <Folder className="w-4 h-4" /> My Projects
+                <Folder className="w-4 h-4" /> My Designs
               </Link>
               {user.role === 'admin' && (
                 <Link

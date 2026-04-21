@@ -163,7 +163,7 @@ export default function ProjectsPage() {
       setShowForm(false);
       toast.success('Project created! Now draw your property border.');
       // Navigate with step=draw-border to guide user to border drawing
-      navigate(`/projects/${res.data.id}?step=draw-border`);
+      navigate(`/designer?project=${res.data.id}`);
     } catch (err: any) {
       toast.error(err?.response?.data?.error || 'Failed to create project');
     } finally {
@@ -381,7 +381,7 @@ export default function ProjectsPage() {
           {projects.map(project => (
             <div
               key={project.id}
-              onClick={() => navigate(`/projects/${project.id}`)}
+              onClick={() => navigate(`/designer?project=${project.id}`)}
               className="bg-white rounded-xl border border-gray-200 hover:border-forest-400 hover:shadow-md cursor-pointer transition-all group"
             >
               <div className="h-36 bg-gradient-to-br from-forest-100 to-forest-200 rounded-t-xl flex items-center justify-center">
