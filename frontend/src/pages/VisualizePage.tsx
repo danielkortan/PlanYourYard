@@ -647,16 +647,18 @@ export default function VisualizePage() {
             )}
           </button>
 
-          {/* API key notice */}
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700 flex items-start gap-2">
-            <Info className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
-            <div>
-              <p className="font-medium mb-1">AI Features Require API Key</p>
-              <p>Add your <code className="bg-amber-100 px-1 rounded">ANTHROPIC_API_KEY</code> to{' '}
-              <code className="bg-amber-100 px-1 rounded">backend/.env</code> for real AI analysis.
-              Without it, demo responses are shown.</p>
+          {/* API key notice — only shown when backend returns demo mode */}
+          {isDemo && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700 flex items-start gap-2">
+              <Info className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
+              <div>
+                <p className="font-medium mb-1">AI Features Require API Key</p>
+                <p>Add your <code className="bg-amber-100 px-1 rounded">ANTHROPIC_API_KEY</code> to{' '}
+                <code className="bg-amber-100 px-1 rounded">backend/.env</code> for real AI analysis.
+                Without it, demo responses are shown.</p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Right: Results */}

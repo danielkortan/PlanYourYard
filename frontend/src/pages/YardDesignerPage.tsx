@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, PointerEvent } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
@@ -7,7 +7,7 @@ import {
   MousePointer2, Home, Trees, Flower2, Tag,
   Save, RotateCcw, ZoomIn, ZoomOut,
   Square, Minus, Camera, X, ChevronRight,
-  Grid3X3, Pencil, Printer, FileImage, FileCode,
+  Grid3X3, Pencil, Printer, FileImage, FileCode, Eye,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -510,6 +510,7 @@ const TOOLS: { id: ToolType; label: string; icon: React.ComponentType<{ classNam
 export default function YardDesignerPage() {
   const [searchParams] = useSearchParams();
   const projectId = searchParams.get('project');
+  const navigate = useNavigate();
   const { user } = useAuth();
 
   const [design, setDesign]         = useState<YardDesign>(loadDesign);
@@ -1548,6 +1549,17 @@ export default function YardDesignerPage() {
             className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors">
             <Square className="w-4 h-4" />
             Add Rectangle
+          </button>
+        </div>
+
+        {/* ── AI Visualizer ── */}
+        <div className="p-3 border-b border-gray-100">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">AI Visualizer</div>
+          <button
+            onClick={() => navigate('/visualize', projectId ? { state: { projectId: Number(projectId) } } : undefined)}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-purple-50 hover:text-purple-700 transition-colors">
+            <Eye className="w-4 h-4 text-purple-400 flex-shrink-0" />
+            Analyze / Visualize Yard
           </button>
         </div>
 

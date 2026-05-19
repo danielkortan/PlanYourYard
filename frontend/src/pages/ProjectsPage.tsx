@@ -427,8 +427,8 @@ export default function ProjectsPage() {
                           },
                         });
                       }}
-                      className="text-gray-300 hover:text-purple-500 transition-colors p-1"
-                      title="Visualize plants for this project"
+                      className="text-purple-400 hover:text-purple-600 transition-colors p-1"
+                      title="AI Visualize"
                     >
                       <Eye className="w-4 h-4" />
                     </button>
