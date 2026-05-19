@@ -1,14 +1,28 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
-  Upload, Image as ImageIcon, Eye, TreePine, X, RefreshCw,
-  Sparkles, Info, ChevronDown, ChevronUp, Search, ArrowRight,
-  Leaf, Camera, ZoomIn
+  Upload, Eye, TreePine, X, RefreshCw,
+  Sparkles, Info, Search, ArrowRight,
+  Leaf, Camera, Plus, Folder, MapPin,
 } from 'lucide-react';
 import { Plant } from '../types';
+
+interface AerialMarker {
+  id: number;
+  plant_id: string;
+  plant_name: string;
+  lat: number;
+  lng: number;
+  notes: string;
+  status: string;
+  year_planted: number | null;
+  growth_rate: string | null;
+  plant_type: string | null;
+  max_height_ft: number | null;
+}
 
 const GROWTH_STAGES = [
   { value: '1year', label: '1 Year', desc: 'First growing season' },
@@ -17,21 +31,6 @@ const GROWTH_STAGES = [
   { value: '10year', label: '10 Years', desc: 'Well established' },
   { value: 'mature', label: 'Mature', desc: 'Full size' },
 ];
-
-function formatMarkdown(text: string): string {
-  return text
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/^### (.*)/gm, '<h3>$1</h3>')
-    .replace(/^## (.*)/gm, '<h2>$1</h2>')
-    .replace(/^# (.*)/gm, '<h2>$1</h2>')
-    .replace(/^\d+\. (.*)/gm, '<li>$1</li>')
-    .replace(/^- (.*)/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`)
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/^(?!<[hul])/gm, '')
-    .trim();
-}
 
 function MarkdownResult({ text }: { text: string }) {
   const sections = text.split('\n\n').filter(s => s.trim());
@@ -78,6 +77,9 @@ function MarkdownResult({ text }: { text: string }) {
 export default function VisualizePage() {
   const location = useLocation();
   const preselectedPlant = location.state?.plant as Plant | undefined;
+  const projectId = location.state?.projectId as number | undefined;
+  const projectName = location.state?.projectName as string | undefined;
+  const projectAddress = location.state?.projectAddress as string | undefined;
 
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -86,14 +88,33 @@ export default function VisualizePage() {
   const [plantResults, setPlantResults] = useState<Plant[]>([]);
   const [showPlantSearch, setShowPlantSearch] = useState(!preselectedPlant);
   const [growthStage, setGrowthStage] = useState('5year');
-  const [location2, setLocation2] = useState('');
-  const [mode, setMode] = useState<'analyze' | 'visualize'>('analyze');
+  const [location2, setLocation2] = useState(projectAddress || '');
+  const [mode, setMode] = useState<'analyze' | 'visualize' | 'landscape'>(
+    projectId ? 'landscape' : 'analyze'
+  );
+
+  // Project context
+  const [existingPlants, setExistingPlants] = useState<AerialMarker[]>([]);
+  const [futurePlants, setFuturePlants] = useState<Plant[]>([]);
+  const [futureSearch, setFutureSearch] = useState('');
+  const [futureResults, setFutureResults] = useState<Plant[]>([]);
+  const [loadingProject, setLoadingProject] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(false);
 
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const futureSearchTimeout = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    if (!projectId) return;
+    setLoadingProject(true);
+    axios.get(`/api/projects/${projectId}`)
+      .then(res => setExistingPlants(res.data.aerialMarkers || []))
+      .catch(() => toast.error('Could not load project plants'))
+      .finally(() => setLoadingProject(false));
+  }, [projectId]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -114,22 +135,29 @@ export default function VisualizePage() {
   });
 
   const searchPlants = async (q: string) => {
-    if (!q.trim() || q.length < 2) {
-      setPlantResults([]);
-      return;
-    }
+    if (!q.trim() || q.length < 2) { setPlantResults([]); return; }
     try {
       const res = await axios.get('/api/plants/search', { params: { q, limit: 6 } });
       setPlantResults(res.data.results);
-    } catch {
-      // Backend may not be running
-    }
+    } catch { /* ignore */ }
   };
 
   const handlePlantSearchChange = (val: string) => {
     setPlantSearch(val);
     clearTimeout(searchTimeout.current);
     searchTimeout.current = setTimeout(() => searchPlants(val), 300);
+  };
+
+  const handleFutureSearchChange = (val: string) => {
+    setFutureSearch(val);
+    clearTimeout(futureSearchTimeout.current);
+    futureSearchTimeout.current = setTimeout(async () => {
+      if (!val.trim() || val.length < 2) { setFutureResults([]); return; }
+      try {
+        const res = await axios.get('/api/plants/search', { params: { q: val, limit: 6 } });
+        setFutureResults(res.data.results);
+      } catch { /* ignore */ }
+    }, 300);
   };
 
   const selectPlant = (plant: Plant) => {
@@ -146,30 +174,92 @@ export default function VisualizePage() {
     setShowPlantSearch(true);
   };
 
-  const runAnalysis = async () => {
-    if (!uploadedFile) {
-      toast.error('Please upload an image first');
-      return;
+  const addFuturePlant = (plant: Plant) => {
+    if (!futurePlants.find(p => p.id === plant.id)) {
+      setFuturePlants(prev => [...prev, plant]);
     }
+    setFutureSearch('');
+    setFutureResults([]);
+  };
 
+  const removeFuturePlant = (id: string) => {
+    setFuturePlants(prev => prev.filter(p => p.id !== id));
+  };
+
+  const runAnalysis = async () => {
     setLoading(true);
     setResult(null);
 
-    const formData = new FormData();
-    formData.append('image', uploadedFile);
-    formData.append('task', mode);
-    if (selectedPlant) {
-      formData.append('plantName', selectedPlant.commonName);
-      formData.append('plantScientific', selectedPlant.scientificName);
-      formData.append('height', selectedPlant.height.max.toString());
-      formData.append('spread', selectedPlant.spread.max.toString());
-    }
-    if (location2) formData.append('location', location2);
-    if (mode === 'visualize') {
-      formData.append('growthStage', growthStage);
-    }
-
     try {
+      if (mode === 'landscape') {
+        const currentYear = new Date().getFullYear();
+        const allPlants = [
+          ...existingPlants.map(m => ({
+            commonName: m.plant_name,
+            scientificName: '',
+            yearPlanted: m.year_planted || currentYear - 3,
+            heightPlanted: 1,
+            currentEstimatedHeight: m.max_height_ft
+              ? Math.min(m.max_height_ft, (m.year_planted ? currentYear - m.year_planted : 3) * 0.75 + 1)
+              : 4,
+            currentEstimatedSpread: 3,
+            growthRate: m.growth_rate || 'medium',
+            type: m.plant_type || 'shrub',
+            zoneName: 'Existing',
+          })),
+          ...futurePlants.map(p => ({
+            commonName: p.commonName,
+            scientificName: p.scientificName,
+            yearPlanted: currentYear,
+            heightPlanted: 0.5,
+            currentEstimatedHeight: 0.5,
+            currentEstimatedSpread: 0.5,
+            growthRate: p.growthRate,
+            type: p.type,
+            zoneName: 'Planned',
+          })),
+        ];
+
+        if (allPlants.length === 0) {
+          toast.error('Add existing or future plants first');
+          setLoading(false);
+          return;
+        }
+
+        const res = await axios.post('/api/ai/streetview', {
+          plants: allPlants,
+          address: location2 || projectAddress || '',
+          viewType: 'street',
+        });
+        const text = res.data.visualization || '';
+        setResult(text);
+        setIsDemo(res.data.demo || false);
+        if (res.data.demo) {
+          toast('Running in demo mode. Add ANTHROPIC_API_KEY for real AI analysis.', { icon: '⚠️', duration: 5000 });
+        } else {
+          toast.success('AI landscape view ready!');
+        }
+        return;
+      }
+
+      if (!uploadedFile) {
+        toast.error('Please upload an image first');
+        setLoading(false);
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('image', uploadedFile);
+      formData.append('task', mode);
+      if (selectedPlant) {
+        formData.append('plantName', selectedPlant.commonName);
+        formData.append('plantScientific', selectedPlant.scientificName);
+        formData.append('height', selectedPlant.height.max.toString());
+        formData.append('spread', selectedPlant.spread.max.toString());
+      }
+      if (location2) formData.append('location', location2);
+      if (mode === 'visualize') formData.append('growthStage', growthStage);
+
       const endpoint = mode === 'analyze' ? '/api/ai/analyze' : '/api/ai/visualize';
       const res = await axios.post(endpoint, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -180,18 +270,13 @@ export default function VisualizePage() {
       setIsDemo(res.data.demo || false);
 
       if (res.data.demo) {
-        toast('Running in demo mode. Add ANTHROPIC_API_KEY for real AI analysis.', {
-          icon: '⚠️',
-          duration: 5000,
-        });
+        toast('Running in demo mode. Add ANTHROPIC_API_KEY for real AI analysis.', { icon: '⚠️', duration: 5000 });
       } else {
         toast.success('AI analysis complete!');
       }
     } catch (err: any) {
       const msg = err.response?.data?.error || 'Analysis failed';
       toast.error(msg);
-
-      // Try to use demo response
       if (err.response?.data?.analysis || err.response?.data?.visualization) {
         setResult(err.response.data.analysis || err.response.data.visualization);
         setIsDemo(true);
@@ -200,6 +285,17 @@ export default function VisualizePage() {
       setLoading(false);
     }
   };
+
+  const analyzeButtonLabel = () => {
+    if (loading) return 'Analyzing with AI...';
+    if (mode === 'analyze') return 'Analyze My Yard';
+    if (mode === 'visualize') return 'Visualize Plant Growth';
+    return 'Generate Landscape View';
+  };
+
+  const analyzeButtonDisabled = mode === 'landscape'
+    ? loading || (existingPlants.length === 0 && futurePlants.length === 0)
+    : loading || !uploadedFile;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
@@ -215,13 +311,50 @@ export default function VisualizePage() {
         </p>
       </div>
 
+      {/* Project context banner */}
+      {projectId && (
+        <div className="mb-6 bg-forest-50 border border-forest-200 rounded-xl p-4 flex items-start gap-3">
+          <Folder className="w-5 h-5 text-forest-600 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-forest-800 truncate">{projectName}</p>
+            {projectAddress && (
+              <p className="text-xs text-forest-600 flex items-center gap-1 mt-0.5">
+                <MapPin className="w-3 h-3" />{projectAddress}
+              </p>
+            )}
+            <p className="text-xs text-forest-500 mt-1">
+              {loadingProject
+                ? 'Loading project plants…'
+                : `${existingPlants.length} documented plant${existingPlants.length !== 1 ? 's' : ''} in this project`}
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="grid lg:grid-cols-5 gap-8">
         {/* Left: Controls */}
         <div className="lg:col-span-2 space-y-5">
+
           {/* Mode selector */}
           <div className="card p-4">
             <h2 className="font-semibold text-gray-900 mb-3">Analysis Mode</h2>
             <div className="grid grid-cols-2 gap-2">
+              {projectId && (
+                <button
+                  onClick={() => setMode('landscape')}
+                  className={`col-span-2 p-3 rounded-xl border-2 text-left transition-all ${
+                    mode === 'landscape'
+                      ? 'border-forest-500 bg-forest-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <Eye className={`w-5 h-5 mb-1.5 ${mode === 'landscape' ? 'text-forest-600' : 'text-gray-400'}`} />
+                  <p className={`text-sm font-medium ${mode === 'landscape' ? 'text-forest-700' : 'text-gray-700'}`}>
+                    Landscape View
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">Visualize existing + future plants together</p>
+                </button>
+              )}
               <button
                 onClick={() => setMode('analyze')}
                 className={`p-3 rounded-xl border-2 text-left transition-all ${
@@ -253,62 +386,140 @@ export default function VisualizePage() {
             </div>
           </div>
 
-          {/* Image upload */}
-          <div className="card p-4">
-            <h2 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-              <Camera className="w-4 h-4 text-gray-400" />
-              Upload Photo
-            </h2>
-            <div
-              {...getRootProps()}
-              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
-                isDragActive
-                  ? 'border-forest-400 bg-forest-50'
-                  : imagePreview
-                  ? 'border-forest-300 bg-forest-50/50'
-                  : 'border-gray-300 hover:border-forest-400 hover:bg-gray-50'
-              }`}
-            >
-              <input {...getInputProps()} />
-              {imagePreview ? (
-                <div className="relative">
-                  <img
-                    src={imagePreview}
-                    alt="Uploaded yard"
-                    className="w-full h-40 object-cover rounded-lg mb-2"
-                  />
-                  <button
-                    onClick={e => {
-                      e.stopPropagation();
-                      setImagePreview(null);
-                      setUploadedFile(null);
-                      setResult(null);
-                    }}
-                    className="absolute top-2 right-2 bg-white/90 text-gray-700 rounded-full p-1 hover:bg-white shadow"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                  <p className="text-xs text-forest-600 font-medium">
-                    {uploadedFile?.name}
-                  </p>
-                  <p className="text-xs text-gray-400">Click to change image</p>
-                </div>
+          {/* Landscape mode: existing plants */}
+          {mode === 'landscape' && (
+            <div className="card p-4">
+              <h2 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                <TreePine className="w-4 h-4 text-forest-600" />
+                Existing Plants
+                <span className="ml-auto text-xs text-gray-400 font-normal">from project</span>
+              </h2>
+              {existingPlants.length === 0 ? (
+                <p className="text-sm text-gray-400 italic">
+                  No plants documented in this project yet. Add plants via the Designer view.
+                </p>
               ) : (
-                <>
-                  <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-sm font-medium text-gray-700">
-                    {isDragActive ? 'Drop image here' : 'Drag & drop or click to upload'}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    House exterior, yard, or aerial photo
-                  </p>
-                  <p className="text-xs text-gray-400">JPG, PNG, WebP up to 20MB</p>
-                </>
+                <ul className="space-y-1.5">
+                  {existingPlants.map(m => (
+                    <li key={m.id} className="flex items-center gap-2 text-sm text-gray-700 bg-forest-50 rounded-lg px-3 py-1.5">
+                      <TreePine className="w-3.5 h-3.5 text-forest-500 shrink-0" />
+                      <span className="flex-1 truncate">{m.plant_name}</span>
+                      {m.year_planted && (
+                        <span className="text-xs text-gray-400 shrink-0">planted {m.year_planted}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
-          </div>
+          )}
 
-          {/* Plant selection (for visualize mode) */}
+          {/* Landscape mode: future plants */}
+          {mode === 'landscape' && (
+            <div className="card p-4">
+              <h2 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-purple-500" />
+                Future / Planned Plants
+              </h2>
+              <div className="relative mb-3">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={futureSearch}
+                  onChange={e => handleFutureSearchChange(e.target.value)}
+                  placeholder="Search plants to add…"
+                  className="input pl-10 text-sm"
+                />
+                {futureResults.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg z-10 mt-1 overflow-hidden">
+                    {futureResults.map(p => (
+                      <button
+                        key={p.id}
+                        onClick={() => addFuturePlant(p)}
+                        className="w-full text-left px-3 py-2.5 hover:bg-purple-50 transition-colors border-b border-gray-50 last:border-0 flex items-center gap-2"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{p.commonName}</p>
+                          <p className="text-xs text-gray-500 italic">{p.scientificName}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {futurePlants.length === 0 ? (
+                <p className="text-xs text-gray-400">Search above to add plants you're considering planting.</p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {futurePlants.map(p => (
+                    <li key={p.id} className="flex items-center gap-2 text-sm text-gray-700 bg-purple-50 rounded-lg px-3 py-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                      <span className="flex-1 truncate">{p.commonName}</span>
+                      <button onClick={() => removeFuturePlant(p.id)} className="text-gray-300 hover:text-red-400 ml-1">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {/* Image upload (photo modes only) */}
+          {mode !== 'landscape' && (
+            <div className="card p-4">
+              <h2 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                <Camera className="w-4 h-4 text-gray-400" />
+                Upload Photo
+              </h2>
+              <div
+                {...getRootProps()}
+                className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
+                  isDragActive
+                    ? 'border-forest-400 bg-forest-50'
+                    : imagePreview
+                    ? 'border-forest-300 bg-forest-50/50'
+                    : 'border-gray-300 hover:border-forest-400 hover:bg-gray-50'
+                }`}
+              >
+                <input {...getInputProps()} />
+                {imagePreview ? (
+                  <div className="relative">
+                    <img
+                      src={imagePreview}
+                      alt="Uploaded yard"
+                      className="w-full h-40 object-cover rounded-lg mb-2"
+                    />
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        setImagePreview(null);
+                        setUploadedFile(null);
+                        setResult(null);
+                      }}
+                      className="absolute top-2 right-2 bg-white/90 text-gray-700 rounded-full p-1 hover:bg-white shadow"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                    <p className="text-xs text-forest-600 font-medium">{uploadedFile?.name}</p>
+                    <p className="text-xs text-gray-400">Click to change image</p>
+                  </div>
+                ) : (
+                  <>
+                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-sm font-medium text-gray-700">
+                      {isDragActive ? 'Drop image here' : 'Drag & drop or click to upload'}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">House exterior, yard, or aerial photo</p>
+                    <p className="text-xs text-gray-400">JPG, PNG, WebP up to 20MB</p>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Plant selection (visualize mode) */}
           {mode === 'visualize' && (
             <div className="card p-4">
               <h2 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
@@ -359,10 +570,7 @@ export default function VisualizePage() {
 
               <div className="mt-3">
                 <label className="label text-xs">Browse Plants</label>
-                <Link
-                  to="/plants"
-                  className="flex items-center gap-2 text-sm text-forest-600 hover:text-forest-800"
-                >
+                <Link to="/plants" className="flex items-center gap-2 text-sm text-forest-600 hover:text-forest-800">
                   <Leaf className="w-4 h-4" />
                   Open Plant Library
                   <ArrowRight className="w-3.5 h-3.5" />
@@ -423,7 +631,7 @@ export default function VisualizePage() {
           {/* Analyze button */}
           <button
             onClick={runAnalysis}
-            disabled={loading || !uploadedFile}
+            disabled={analyzeButtonDisabled}
             className="w-full bg-gradient-to-r from-forest-600 to-forest-700 hover:from-forest-700 hover:to-forest-800 disabled:from-gray-300 disabled:to-gray-300 text-white font-semibold px-6 py-4 rounded-xl flex items-center justify-center gap-3 transition-all shadow-sm disabled:cursor-not-allowed"
           >
             {loading ? (
@@ -434,7 +642,7 @@ export default function VisualizePage() {
             ) : (
               <>
                 <Sparkles className="w-5 h-5" />
-                {mode === 'analyze' ? 'Analyze My Yard' : 'Visualize Plant Growth'}
+                {analyzeButtonLabel()}
               </>
             )}
           </button>
@@ -457,7 +665,9 @@ export default function VisualizePage() {
             <div className="card p-6 animate-fade-in">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${mode === 'visualize' ? 'bg-purple-100' : 'bg-forest-100'}`}>
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                    mode === 'visualize' ? 'bg-purple-100' : mode === 'landscape' ? 'bg-forest-100' : 'bg-forest-100'
+                  }`}>
                     {mode === 'visualize' ? (
                       <Sparkles className="w-4 h-4 text-purple-600" />
                     ) : (
@@ -466,10 +676,19 @@ export default function VisualizePage() {
                   </div>
                   <div>
                     <h2 className="font-semibold text-gray-900">
-                      {mode === 'analyze' ? 'Yard Analysis' : `Growth Visualization: ${GROWTH_STAGES.find(s => s.value === growthStage)?.label}`}
+                      {mode === 'analyze'
+                        ? 'Yard Analysis'
+                        : mode === 'landscape'
+                        ? 'Landscape View'
+                        : `Growth Visualization: ${GROWTH_STAGES.find(s => s.value === growthStage)?.label}`}
                     </h2>
                     {selectedPlant && mode === 'visualize' && (
                       <p className="text-xs text-gray-500">{selectedPlant.commonName} · {selectedPlant.scientificName}</p>
+                    )}
+                    {mode === 'landscape' && (
+                      <p className="text-xs text-gray-500">
+                        {existingPlants.length} existing · {futurePlants.length} planned
+                      </p>
                     )}
                   </div>
                 </div>
@@ -479,17 +698,13 @@ export default function VisualizePage() {
                       Demo Mode
                     </span>
                   )}
-                  <button
-                    onClick={() => setResult(null)}
-                    className="text-gray-400 hover:text-gray-600"
-                  >
+                  <button onClick={() => setResult(null)} className="text-gray-400 hover:text-gray-600">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
               </div>
 
-              {/* Uploaded image thumbnail */}
-              {imagePreview && (
+              {imagePreview && mode !== 'landscape' && (
                 <div className="mb-4">
                   <img
                     src={imagePreview}
@@ -499,17 +714,12 @@ export default function VisualizePage() {
                 </div>
               )}
 
-              {/* Result text */}
               <div className="bg-gray-50 rounded-xl p-4">
                 <MarkdownResult text={result} />
               </div>
 
-              {/* Actions */}
               <div className="flex gap-3 mt-4 pt-4 border-t border-gray-100">
-                <button
-                  onClick={runAnalysis}
-                  className="btn-outline text-sm"
-                >
+                <button onClick={runAnalysis} className="btn-outline text-sm">
                   <RefreshCw className="w-4 h-4" />
                   Re-analyze
                 </button>
@@ -520,10 +730,7 @@ export default function VisualizePage() {
                   </Link>
                 )}
                 {mode === 'analyze' && (
-                  <button
-                    onClick={() => setMode('visualize')}
-                    className="btn-secondary text-sm"
-                  >
+                  <button onClick={() => setMode('visualize')} className="btn-secondary text-sm">
                     <Sparkles className="w-4 h-4" />
                     Try Visualizer
                   </button>
@@ -531,57 +738,67 @@ export default function VisualizePage() {
               </div>
             </div>
           ) : (
-            <div className="h-full">
-              {/* Placeholder */}
-              <div className="card p-8 text-center h-full flex flex-col items-center justify-center min-h-[400px]">
-                {uploadedFile ? (
-                  <>
-                    <div className="w-16 h-16 bg-forest-100 rounded-2xl flex items-center justify-center mb-4">
-                      <Sparkles className="w-8 h-8 text-forest-600" />
-                    </div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Ready to Analyze!</h3>
-                    <p className="text-gray-500 text-sm mb-4">
-                      {mode === 'analyze'
-                        ? "Click 'Analyze My Yard' to get AI landscape assessment and plant recommendations."
-                        : selectedPlant
-                        ? `Click 'Visualize Plant Growth' to see how ${selectedPlant.commonName} will look in your yard.`
-                        : "Select a plant and click 'Visualize Plant Growth' to see how it will look in your yard."}
-                    </p>
-                    <img
-                      src={imagePreview!}
-                      alt="Your yard"
-                      className="w-full max-w-sm max-h-48 object-cover rounded-xl border border-gray-200"
-                    />
-                  </>
-                ) : (
-                  <>
-                    <div className="w-20 h-20 bg-gradient-to-br from-forest-100 to-purple-100 rounded-2xl flex items-center justify-center mb-4">
-                      <Eye className="w-10 h-10 text-forest-600" />
-                    </div>
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2">AI Yard Visualizer</h3>
-                    <p className="text-gray-500 max-w-md mb-6">
-                      Upload a photo of your house exterior or yard, then use AI to analyze
-                      your landscape or visualize how specific plants will look as they grow over time.
-                    </p>
-                    <div className="grid grid-cols-2 gap-4 w-full max-w-sm text-left">
-                      {[
-                        { icon: Search, title: 'Yard Analysis', desc: 'Get sun/shade assessment & plant recommendations' },
-                        { icon: Sparkles, title: 'Growth Visualizer', desc: 'See how plants look at 1, 3, 5, 10+ years' },
-                        { icon: TreePine, title: 'Plant Matching', desc: 'AI suggests plants suited to your conditions' },
-                        { icon: Camera, title: 'Any Photo', desc: 'Use house exterior, yard, or aerial photos' },
-                      ].map((item, i) => (
-                        <div key={i} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl">
-                          <item.icon className="w-5 h-5 text-forest-600 shrink-0 mt-0.5" />
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">{item.title}</p>
-                            <p className="text-xs text-gray-500">{item.desc}</p>
-                          </div>
+            <div className="card p-8 text-center h-full flex flex-col items-center justify-center min-h-[400px]">
+              {mode === 'landscape' ? (
+                <>
+                  <div className="w-16 h-16 bg-forest-100 rounded-2xl flex items-center justify-center mb-4">
+                    <Eye className="w-8 h-8 text-forest-600" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Landscape View</h3>
+                  <p className="text-gray-500 text-sm mb-2">
+                    AI will describe how your yard looks today with existing plants, and how it will evolve once planned plants are added.
+                  </p>
+                  <p className="text-gray-400 text-xs">
+                    {existingPlants.length} existing · {futurePlants.length} planned — click Generate when ready.
+                  </p>
+                </>
+              ) : uploadedFile ? (
+                <>
+                  <div className="w-16 h-16 bg-forest-100 rounded-2xl flex items-center justify-center mb-4">
+                    <Sparkles className="w-8 h-8 text-forest-600" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Ready to Analyze!</h3>
+                  <p className="text-gray-500 text-sm mb-4">
+                    {mode === 'analyze'
+                      ? "Click 'Analyze My Yard' to get AI landscape assessment and plant recommendations."
+                      : selectedPlant
+                      ? `Click 'Visualize Plant Growth' to see how ${selectedPlant.commonName} will look in your yard.`
+                      : "Select a plant and click 'Visualize Plant Growth' to see how it will look in your yard."}
+                  </p>
+                  <img
+                    src={imagePreview!}
+                    alt="Your yard"
+                    className="w-full max-w-sm max-h-48 object-cover rounded-xl border border-gray-200"
+                  />
+                </>
+              ) : (
+                <>
+                  <div className="w-20 h-20 bg-gradient-to-br from-forest-100 to-purple-100 rounded-2xl flex items-center justify-center mb-4">
+                    <Eye className="w-10 h-10 text-forest-600" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-900 mb-2">AI Yard Visualizer</h3>
+                  <p className="text-gray-500 max-w-md mb-6">
+                    Upload a photo of your house exterior or yard, then use AI to analyze
+                    your landscape or visualize how specific plants will look as they grow over time.
+                  </p>
+                  <div className="grid grid-cols-2 gap-4 w-full max-w-sm text-left">
+                    {[
+                      { icon: Search, title: 'Yard Analysis', desc: 'Get sun/shade assessment & plant recommendations' },
+                      { icon: Sparkles, title: 'Growth Visualizer', desc: 'See how plants look at 1, 3, 5, 10+ years' },
+                      { icon: TreePine, title: 'Plant Matching', desc: 'AI suggests plants suited to your conditions' },
+                      { icon: Camera, title: 'Any Photo', desc: 'Use house exterior, yard, or aerial photos' },
+                    ].map((item, i) => (
+                      <div key={i} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl">
+                        <item.icon className="w-5 h-5 text-forest-600 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{item.title}</p>
+                          <p className="text-xs text-gray-500">{item.desc}</p>
                         </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
