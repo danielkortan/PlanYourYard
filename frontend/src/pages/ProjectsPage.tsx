@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Folder, MapPin, Image, Trash2, Calendar, X, Satellite, Navigation } from 'lucide-react';
+import { Plus, Folder, MapPin, Image, Trash2, Calendar, X, Satellite, Navigation, Eye } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -415,13 +415,31 @@ export default function ProjectsPage() {
                       {new Date(project.created_at).toLocaleDateString()}
                     </span>
                   </div>
-                  <button
-                    onClick={(e) => handleDelete(project.id, e)}
-                    className="text-gray-300 hover:text-red-500 transition-colors p-1"
-                    title="Delete project"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate('/visualize', {
+                          state: {
+                            projectId: project.id,
+                            projectName: project.name,
+                            projectAddress: project.address,
+                          },
+                        });
+                      }}
+                      className="text-gray-300 hover:text-purple-500 transition-colors p-1"
+                      title="Visualize plants for this project"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={(e) => handleDelete(project.id, e)}
+                      className="text-gray-300 hover:text-red-500 transition-colors p-1"
+                      title="Delete project"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
