@@ -856,7 +856,25 @@ export default function YardDesignerPage() {
   const printDesign = (pageSize: string) => {
     const svg = svgRef.current;
     if (!svg) return;
-    const svgStr = new XMLSerializer().serializeToString(svg);
+
+    // Clone so we can mutate viewBox without affecting the live canvas
+    const clone = svg.cloneNode(true) as SVGSVGElement;
+
+    if (yardBorderPts && yardBorderPts.length >= 3) {
+      const xs = yardBorderPts.map(p => p.x);
+      const ys = yardBorderPts.map(p => p.y);
+      const pad = 20; // px padding around yard outline
+      const minX = Math.min(...xs) - pad;
+      const minY = Math.min(...ys) - pad;
+      const vbW  = Math.max(...xs) - minX + pad;
+      const vbH  = Math.max(...ys) - minY + pad;
+      clone.setAttribute('viewBox', `${minX} ${minY} ${vbW} ${vbH}`);
+    }
+    clone.removeAttribute('width');
+    clone.removeAttribute('height');
+    clone.style.cssText = '';
+
+    const svgStr = new XMLSerializer().serializeToString(clone);
     const win = window.open('', '_blank');
     if (!win) { toast.error('Pop-up blocked — please allow pop-ups'); return; }
     win.document.write(`<!DOCTYPE html><html>
