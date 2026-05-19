@@ -54,7 +54,7 @@ router.post('/analyze', upload.single('image'), async (req: Request, res: Respon
          Focus on practical, actionable advice for a homeowner.`;
 
     const response = await client.messages.create({
-      model: 'claude-opus-4-6',
+      model: 'claude-opus-4-7',
       max_tokens: 2000,
       messages: [
         {
@@ -148,7 +148,7 @@ Please provide:
 Make this description vivid and specific enough that the homeowner can clearly picture the transformation.`;
 
     const response = await client.messages.create({
-      model: 'claude-opus-4-6',
+      model: 'claude-opus-4-7',
       max_tokens: 1500,
       messages: [
         {
@@ -244,7 +244,7 @@ Make the description specific, vivid, and inspirational so the homeowner can tru
   try {
     const client = getClient();
     const response = await client.messages.create({
-      model: 'claude-opus-4-6',
+      model: 'claude-opus-4-7',
       max_tokens: 1500,
       messages: [{ role: 'user', content: prompt }],
     });
