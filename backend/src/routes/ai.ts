@@ -21,11 +21,19 @@ function buildCatalogPromptList(): string {
     .join('\n');
 }
 
-// Clamp a map coordinate to the 0-100 range, defaulting to the center if missing/invalid
-function clampCoord(n: any): number {
+// Clamp an x coordinate to stay just inside the map's left/right edges
+function clampX(n: any): number {
   const num = typeof n === 'number' ? n : parseFloat(n);
   if (!Number.isFinite(num)) return 50;
-  return Math.min(100, Math.max(0, num));
+  return Math.min(96, Math.max(4, num));
+}
+
+// Clamp a y coordinate to the yard area — never inside the house band (y 0-15),
+// since markers there would visually render on top of the house graphic
+function clampY(n: any): number {
+  const num = typeof n === 'number' ? n : parseFloat(n);
+  if (!Number.isFinite(num)) return 55;
+  return Math.min(96, Math.max(18, num));
 }
 
 function enrichRecommendation(rec: { plantId?: string; whyItWorks?: string; location?: string; x?: number; y?: number }): Record<string, any> | null {
@@ -50,8 +58,8 @@ function enrichRecommendation(rec: { plantId?: string; whyItWorks?: string; loca
     whenToBuy: PLANTING_SEASON_BY_TYPE[plant.type],
     howToPlant: PLANTING_INSTRUCTIONS_BY_TYPE[plant.type],
     care: plant.careTips,
-    x: clampCoord(rec.x),
-    y: clampCoord(rec.y),
+    x: clampX(rec.x),
+    y: clampY(rec.y),
   };
 }
 
@@ -59,8 +67,8 @@ function enrichExistingPlant(item: { label?: string; x?: number; y?: number }): 
   if (!item?.label) return null;
   return {
     label: item.label,
-    x: clampCoord(item.x),
-    y: clampCoord(item.y),
+    x: clampX(item.x),
+    y: clampY(item.y),
   };
 }
 
@@ -130,8 +138,8 @@ ${buildCatalogPromptList()}
 
 You will also produce a simple top-down map of the property using this coordinate convention:
 - x ranges 0-100 (0 = left edge of the property, 100 = right edge)
-- y ranges 0-100 (0 = at the house/back of the property, 100 = at the street/front edge closest to the viewer)
-- The house occupies roughly x 25-75, y 0-15 (a band across the top of the map)
+- y ranges 18-100 (the house occupies y 0-17, a band across the top of the map, so y=18 is the ground immediately in front of/beside the house and y=100 is the street/front edge closest to the viewer) — NEVER use a y value below 18, since that would place a marker on top of the house itself
+- Foundation plantings (right up against the house wall) should use y around 18-25; mid-yard plantings around y 30-65; plantings near the street/front edge around y 70-95
 - Place each existing item and each recommendation at the (x, y) that best matches where it actually is (or should go) in the photo relative to the house and walkway
 
 Respond with ONLY a single valid JSON object (no markdown code fences, no commentary before or after) matching exactly this shape:
@@ -485,7 +493,7 @@ function generateDemoStructuredAnalysis(): Record<string, any> {
     currentPlants: 'A mature shade tree and a row of overgrown sheared shrubs along the foundation are visible; no other ornamental plantings identified.',
     existingPlantsMap: [
       { label: 'Mature Shade Tree', x: 20, y: 45 },
-      { label: 'Overgrown Foundation Shrubs', x: 50, y: 17 },
+      { label: 'Overgrown Foundation Shrubs', x: 50, y: 20 },
     ],
     recommendations: [
       {
