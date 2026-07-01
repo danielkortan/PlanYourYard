@@ -42,16 +42,34 @@ router.post('/analyze', upload.single('image'), async (req: Request, res: Respon
          5. **Care Timeline**: Key maintenance tasks for the first 3 years
 
          Be specific about placement, spacing, and visual impact.`
-      : `You are a professional landscape architect. Analyze this photo of a yard/house exterior.
+      : `You are a professional landscape architect. Analyze this photo of a yard/house exterior${location ? ` located in ${location}` : ''}.
 
-         Please provide:
-         1. **Site Assessment**: Sun exposure (full sun/part shade/shade areas), existing vegetation, soil type indicators
-         2. **Landscape Opportunities**: Best areas for new plantings and why
-         3. **Current Plant Identification**: Identify any existing plants/trees you can see
-         4. **Improvement Recommendations**: Top 5 native plant suggestions that would thrive here
-         5. **Design Concepts**: One cohesive landscape design concept for this property
+Respond with ONLY a single valid JSON object (no markdown code fences, no commentary before or after) matching exactly this shape:
 
-         Focus on practical, actionable advice for a homeowner.`;
+{
+  "siteAssessment": "string - sun exposure (full sun/part shade/shade areas), existing vegetation, soil type indicators",
+  "landscapeOpportunities": "string - best areas for new plantings and why",
+  "currentPlants": "string - identification of any existing plants/trees visible",
+  "recommendations": [
+    {
+      "commonName": "string",
+      "scientificName": "string",
+      "type": "string - e.g. Tree, Shrub, Perennial, Fern, Groundcover",
+      "whyItWorks": "string - why this plant suits the site",
+      "whenToBuy": "string - best season/month to purchase and plant it",
+      "howToPlant": "string - planting instructions: hole size, spacing, depth, soil prep",
+      "care": "string - ongoing care: watering, pruning, fertilizing schedule",
+      "location": "string - exactly where on the property to place it"
+    }
+  ],
+  "designConcept": {
+    "title": "string - short evocative name for the overall design",
+    "description": "string - 1-2 sentence summary of the concept",
+    "steps": ["string - ordered implementation steps"]
+  }
+}
+
+Provide exactly 5 native plant recommendations suited to this location and the visible site conditions. Be specific and practical enough that a homeowner could use "recommendations" as a shopping and planting checklist.`;
 
     const response = await client.messages.create({
       model: 'claude-opus-4-8',
@@ -78,8 +96,10 @@ router.post('/analyze', upload.single('image'), async (req: Request, res: Respon
     });
 
     const textContent = response.content.find(c => c.type === 'text');
+    const rawText = textContent?.type === 'text' ? textContent.text : '';
     res.json({
-      analysis: textContent?.type === 'text' ? textContent.text : '',
+      analysis: rawText,
+      structured: plantName ? null : parseStructuredAnalysis(rawText),
       usage: response.usage,
     });
   } catch (error: any) {
@@ -88,12 +108,24 @@ router.post('/analyze', upload.single('image'), async (req: Request, res: Respon
         error: 'AI service not configured. Please add your ANTHROPIC_API_KEY to the backend .env file.',
         demo: true,
         analysis: generateDemoAnalysis(plantName, location),
+        structured: plantName ? null : generateDemoStructuredAnalysis(),
       });
     }
     console.error('AI analyze error:', error);
     res.status(500).json({ error: 'AI analysis failed', details: error.message });
   }
 });
+
+// Attempt to parse the yard-analysis JSON payload out of the model's text response
+function parseStructuredAnalysis(text: string): Record<string, any> | null {
+  try {
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    return JSON.parse(match[0]);
+  } catch {
+    return null;
+  }
+}
 
 // Visualize plant growth stages
 router.post('/visualize', upload.single('image'), async (req: Request, res: Response) => {
@@ -345,6 +377,77 @@ The property shows typical suburban landscape conditions with open lawn areas an
 3. **Black-eyed Susan** - Low-maintenance native perennial
 4. **Wild Bergamot** - Pollinator magnet
 5. **Little Bluestem** - Native grass for year-round interest`;
+}
+
+function generateDemoStructuredAnalysis(): Record<string, any> {
+  return {
+    siteAssessment: 'This demo response simulates a property with a mix of full sun near the front lawn and part-shade under mature trees toward the back. Soil appears to be typical clay-loam common to the Mid-Atlantic region, with decent drainage.',
+    landscapeOpportunities: 'The foundation bed along the front of the house and the shaded area under the tree canopy are both underused and would benefit from layered native plantings instead of turf.',
+    currentPlants: 'A mature shade tree and a row of overgrown sheared shrubs along the foundation are visible; no other ornamental plantings identified.',
+    recommendations: [
+      {
+        commonName: 'Eastern Redbud',
+        scientificName: 'Cercis canadensis',
+        type: 'Tree',
+        whyItWorks: 'Understory native that thrives in filtered light and adds spring color at a manageable scale for a front yard.',
+        whenToBuy: 'Purchase and plant in early spring or fall while dormant, ideally as a container or balled-and-burlapped sapling from a native nursery.',
+        howToPlant: 'Dig a hole twice the width of the root ball and the same depth; backfill with native soil, water deeply, and mulch 2-3 inches, keeping mulch off the trunk.',
+        care: 'Water weekly for the first growing season, prune only to remove dead or crossing branches in late winter, no fertilizer needed once established.',
+        location: 'Offset to one side of the entry walkway for seasonal color without blocking the door.',
+      },
+      {
+        commonName: 'Oakleaf Hydrangea',
+        scientificName: 'Hydrangea quercifolia',
+        type: 'Shrub',
+        whyItWorks: 'Shade-tolerant with four-season interest; makes an excellent foundation replacement for sheared non-native shrubs.',
+        whenToBuy: 'Best purchased and planted in early fall or early spring from a local nursery.',
+        howToPlant: 'Plant in a hole as deep as the root ball and 2x as wide, amend with compost, water in thoroughly, and mulch.',
+        care: 'Water regularly the first year, prune immediately after flowering only if needed, mulch annually to retain moisture.',
+        location: 'Foundation bed along the front of the house, spaced 4-5 feet apart.',
+      },
+      {
+        commonName: 'Christmas Fern',
+        scientificName: 'Polystichum acrostichoides',
+        type: 'Fern',
+        whyItWorks: 'Evergreen groundcover that handles dry shade under trees where grass struggles.',
+        whenToBuy: 'Plant in spring or fall; widely available as small potted plants.',
+        howToPlant: 'Space 18-24 inches apart, plant at the same depth as the container, water in well.',
+        care: 'Water during dry spells the first season; otherwise low-maintenance, no fertilizing required.',
+        location: 'Underneath the mature shade tree canopy in the back yard.',
+      },
+      {
+        commonName: 'Foamflower',
+        scientificName: 'Tiarella cordifolia',
+        type: 'Perennial',
+        whyItWorks: 'Spreading shade groundcover with delicate spring flowers that fills bare mulch areas.',
+        whenToBuy: 'Plant in spring or early fall from potted nursery stock.',
+        howToPlant: 'Plant 12-15 inches apart at the same depth as the pot, water thoroughly after planting.',
+        care: 'Keep evenly moist the first season; divide clumps every few years to maintain vigor.',
+        location: 'Along the shaded walkway border as a low edging groundcover.',
+      },
+      {
+        commonName: 'Virginia Sweetspire',
+        scientificName: 'Itea virginica',
+        type: 'Shrub',
+        whyItWorks: 'Handles moist soil, offers fragrant blooms and vivid red fall color.',
+        whenToBuy: 'Purchase and plant in fall or early spring.',
+        howToPlant: 'Dig a hole twice as wide as the root ball, backfill and water deeply, mulch to retain moisture.',
+        care: 'Water regularly until established, prune after flowering to control size, tolerates wet spots well.',
+        location: 'Low-lying side yard area that collects moisture after rain.',
+      },
+    ],
+    designConcept: {
+      title: 'Woodland Edge Retreat',
+      description: 'Embrace the property\'s natural forest setting rather than fighting it, layering native trees, shrubs, and groundcovers from the house out toward the tree line.',
+      steps: [
+        'Anchor the entry with an Eastern Redbud offset to one side for seasonal color and scale.',
+        'Replace tired sheared shrubs with a naturalized foundation of Oakleaf Hydrangea and Virginia Sweetspire, allowing loose, organic forms.',
+        'Underplant with a groundcover carpet of Christmas Fern and Foamflower to eliminate bare mulch and reduce weeding.',
+        'Define the walkway with a low border of shade perennials for a welcoming approach.',
+        'Convert struggling turf under tree canopies into naturalized woodland beds with native groundcovers and a leaf-mulch aesthetic.',
+      ],
+    },
+  };
 }
 
 function generateDemoVisualization(plantName: string, growthStage: string, height: string, spread: string): string {
