@@ -4,6 +4,7 @@ import { ReactNode } from 'react';
 import Header from './components/Header';
 import PlantsPage from './pages/PlantsPage';
 import VisualizePage from './pages/VisualizePage';
+import PlannerPage from './pages/PlannerPage';
 import LoginPage from './pages/LoginPage';
 import ProjectsPage from './pages/ProjectsPage';
 import AdminPage from './pages/AdminPage';
@@ -26,6 +27,7 @@ function AppRoutes() {
         <Routes>
           <Route path="/" element={<Navigate to="/designer" replace />} />
           <Route path="/designer" element={<YardDesignerPage />} />
+          <Route path="/planner" element={<PlannerPage />} />
           <Route path="/plants" element={<PlantsPage />} />
           <Route path="/visualize" element={<ProtectedRoute><VisualizePage /></ProtectedRoute>} />
           <Route path="/login" element={<LoginPage />} />

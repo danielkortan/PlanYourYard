@@ -75,6 +75,7 @@ export interface PlacedPlant {
   plantId: string;
   commonName: string;
   scientificName: string;
+  type?: string;
   position: [number, number];
   plantedDate?: string;
   yearPlanted?: number;

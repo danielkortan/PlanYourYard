@@ -255,7 +255,7 @@ function PlantMarkersLayer({
         const spreadFt = Math.min(age * 1.5, 25);
         const spreadM = spreadFt * 0.3048;
 
-        const color = PLANT_TYPE_COLORS['shrub']; // default
+        const color = PLANT_TYPE_COLORS[plant.type || 'shrub'] || PLANT_TYPE_COLORS['shrub'];
 
         const circle = L.circle(plant.position, {
           radius: spreadM / 2,
@@ -444,6 +444,7 @@ function AddPlantModal({ zoneId, zoneName, onClose, onAdd, defaultPosition }: Ad
       plantId: selectedPlant.id,
       commonName: selectedPlant.commonName,
       scientificName: selectedPlant.scientificName,
+      type: selectedPlant.type,
       position: defaultPosition,
       yearPlanted,
       heightPlanted,

@@ -215,8 +215,7 @@ export default function HomePage() {
         <div className="max-w-3xl mx-auto px-4 text-center">
           <h2 className="text-3xl font-bold text-gray-900 mb-4">Ready to Plan Your Native Yard?</h2>
           <p className="text-gray-600 mb-8">
-            Start with the plant library or jump right into mapping your yard.
-            No account required — everything runs in your browser.
+            Start with the plant library, or sign in to map your yard and use the AI visualizer.
           </p>
           <div className="flex flex-wrap justify-center gap-4">
             <Link to="/planner" className="btn-primary text-base px-6 py-3">

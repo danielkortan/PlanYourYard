@@ -1,4 +1,4 @@
-import { Router, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { requireAdmin, AuthRequest } from '../middleware/auth';
 import db from '../database/db';
@@ -6,16 +6,31 @@ import db from '../database/db';
 const router = Router();
 
 // GET /api/admin/users
-router.get('/users', requireAdmin, (_req: AuthRequest, res: Response) => {
-  const users = db.prepare(`
+router.get('/users', requireAdmin, (req: Request, res: Response) => {
+  const { q, page = '1', limit = '20' } = req.query as Record<string, string>;
+
+  const search = q?.trim();
+  const where = search ? 'WHERE (u.name LIKE ? OR u.email LIKE ?)' : '';
+  const searchParams = search ? [`%${search}%`, `%${search}%`] : [];
+
+  const total = (db.prepare(`SELECT COUNT(*) as count FROM users u ${where}`).get(...searchParams) as any).count;
+
+  const pageNum = Math.max(1, parseInt(page) || 1);
+  const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20));
+  const offset = (pageNum - 1) * limitNum;
+
+  const results = db.prepare(`
     SELECT u.id, u.email, u.name, u.role, u.created_at,
            COUNT(p.id) as project_count
     FROM users u
     LEFT JOIN projects p ON p.user_id = u.id
+    ${where}
     GROUP BY u.id
     ORDER BY u.created_at ASC
-  `).all();
-  res.json(users);
+    LIMIT ? OFFSET ?
+  `).all(...searchParams, limitNum, offset);
+
+  res.json({ total, page: pageNum, limit: limitNum, results });
 });
 
 // PUT /api/admin/users/:id — update role or name

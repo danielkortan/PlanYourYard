@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Shield, Trash2, UserCheck, UserX, RefreshCw, Folder } from 'lucide-react';
+import { Shield, Trash2, UserCheck, UserX, RefreshCw, Folder, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
@@ -13,21 +13,34 @@ interface AdminUser {
   project_count: number;
 }
 
+const PAGE_SIZE = 25;
+
 export default function AdminPage() {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionId, setActionId] = useState<number | null>(null);
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const loadUsers = () => {
     setLoading(true);
-    axios.get('/api/admin/users')
-      .then(res => setUsers(res.data))
+    axios.get('/api/admin/users', { params: { q: search || undefined, page, limit: PAGE_SIZE } })
+      .then(res => { setUsers(res.data.results); setTotal(res.data.total); })
       .catch(() => toast.error('Failed to load users'))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { loadUsers(); }, []);
+  // Debounce free-text search before it drives the page-1 refetch below
+  useEffect(() => {
+    const t = setTimeout(() => { setSearch(searchInput.trim()); setPage(1); }, 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  useEffect(() => { loadUsers(); }, [search, page]);
 
   const toggleRole = async (user: AdminUser) => {
     if (user.id === currentUser?.id) { toast.error("You can't change your own role"); return; }
@@ -51,8 +64,12 @@ export default function AdminPage() {
     setActionId(user.id);
     try {
       await axios.delete(`/api/admin/users/${user.id}`);
-      setUsers(prev => prev.filter(u => u.id !== user.id));
       toast.success(`User ${user.name} deleted`);
+      if (users.length === 1 && page > 1) {
+        setPage(p => p - 1); // deleted the last user on this page — fall back a page
+      } else {
+        loadUsers();
+      }
     } catch (err: any) {
       toast.error(err?.response?.data?.error || 'Failed to delete user');
     } finally {
@@ -73,7 +90,7 @@ export default function AdminPage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Admin Panel</h1>
-            <p className="text-gray-500 text-sm">{users.length} total users</p>
+            <p className="text-gray-500 text-sm">{total} total user{total === 1 ? '' : 's'}</p>
           </div>
         </div>
         <button
@@ -84,12 +101,12 @@ export default function AdminPage() {
         </button>
       </div>
 
-      {/* Stats */}
+      {/* Stats (reflect the current page only, since the full user list is paginated) */}
       <div className="grid grid-cols-3 gap-4 mb-8">
         {[
-          { label: 'Total Users', value: users.length, color: 'bg-blue-50 text-blue-700' },
-          { label: 'Admins', value: admins.length, color: 'bg-purple-50 text-purple-700' },
-          { label: 'Regular Users', value: regularUsers.length, color: 'bg-green-50 text-green-700' },
+          { label: 'Total Users', value: total, color: 'bg-blue-50 text-blue-700' },
+          { label: 'Admins (this page)', value: admins.length, color: 'bg-purple-50 text-purple-700' },
+          { label: 'Regular Users (this page)', value: regularUsers.length, color: 'bg-green-50 text-green-700' },
         ].map(stat => (
           <div key={stat.label} className={`rounded-xl p-4 ${stat.color}`}>
             <div className="text-2xl font-bold">{stat.value}</div>
@@ -98,9 +115,27 @@ export default function AdminPage() {
         ))}
       </div>
 
+      {/* Search */}
+      <div className="relative mb-6 max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <input
+          type="text"
+          value={searchInput}
+          onChange={e => setSearchInput(e.target.value)}
+          placeholder="Search by name or email…"
+          className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+        />
+      </div>
+
       {/* Users table */}
       {loading ? (
         <div className="flex items-center justify-center py-20 text-gray-400">Loading users…</div>
+      ) : users.length === 0 && search ? (
+        <div className="text-center py-20">
+          <Search className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-600 mb-2">No users match "{search}"</h3>
+          <p className="text-gray-400">Try a different name or email.</p>
+        </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <table className="w-full">
@@ -177,6 +212,31 @@ export default function AdminPage() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {!loading && total > PAGE_SIZE && (
+        <div className="flex items-center justify-center gap-3 mt-8">
+          <button
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            aria-label="Previous page"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <span className="text-sm text-gray-500">
+            Page {page} of {totalPages} · {total} user{total === 1 ? '' : 's'}
+          </span>
+          <button
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+            className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            aria-label="Next page"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
         </div>
       )}
     </div>
