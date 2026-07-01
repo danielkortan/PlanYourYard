@@ -4,6 +4,7 @@ import {
   MapPin, Thermometer, Calendar, Sprout, Star, ExternalLink,
   CheckCircle2, AlertCircle, Leaf
 } from 'lucide-react';
+import PlantImage from './PlantImage';
 
 interface PlantDetailModalProps {
   plant: Plant | null;
@@ -68,6 +69,13 @@ export default function PlantDetailModal({ plant, onClose, onSelectForVisualizer
             <p className="text-forest-300 text-xs mt-1">Family: {plant.family}</p>
           </div>
         </div>
+
+        <PlantImage
+          plantId={plant.id}
+          commonName={plant.commonName}
+          className="w-full h-48 object-cover"
+          showAttribution
+        />
 
         <div className="p-6 space-y-5">
           {/* Description */}

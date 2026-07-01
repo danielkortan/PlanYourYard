@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import axios from 'axios';
 import { NativePlant, PlantSearchQuery } from '../types';
 import { nativePlantsData } from '../data/nativePlants';
+import { getPlantImage } from '../data/plantImages';
 
 const router = Router();
 
@@ -75,6 +76,16 @@ router.get('/:id', (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Plant not found' });
   }
   res.json(plant);
+});
+
+// Lazily fetch (and cache) a representative photo for a plant from iNaturalist
+router.get('/:id/image', async (req: Request, res: Response) => {
+  const plant = nativePlantsData.find(p => p.id === req.params.id);
+  if (!plant) {
+    return res.status(404).json({ error: 'Plant not found' });
+  }
+  const image = await getPlantImage(plant.scientificName);
+  res.json(image);
 });
 
 // Search iNaturalist for additional plant data
