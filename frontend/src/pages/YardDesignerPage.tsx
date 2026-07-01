@@ -11,6 +11,7 @@ import {
   Sparkles, RefreshCw, Plus,
 } from 'lucide-react';
 import { StructuredAnalysisView, StructuredAnalysis } from '../components/YardAnalysisMap';
+import { compressImageForUpload, loadImageElement } from '../utils/image';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -933,10 +934,13 @@ export default function YardDesignerPage() {
     setAiLoading(true);
     setAiResult(null);
     setAiError(null);
+    setAiDemo(false);
     try {
       const blob = await fetch(backgroundImage).then(r => r.blob());
+      const rawFile = new File([blob], 'yard.jpg', { type: blob.type || 'image/jpeg' });
+      const file = await compressImageForUpload(rawFile);
       const formData = new FormData();
-      formData.append('image', new File([blob], 'yard.jpg', { type: blob.type || 'image/jpeg' }));
+      formData.append('image', file);
       formData.append('task', 'analyze');
       if (projectAddress) formData.append('location', projectAddress);
       const res = await axios.post('/api/ai/analyze', formData, {
@@ -963,17 +967,38 @@ export default function YardDesignerPage() {
   };
 
   // Places each AI-recommended plant onto the canvas at the position it was
-  // suggested for, mapping the analysis photo's 0-100% coordinates directly
-  // onto the canvas (the background photo already covers the full canvas).
-  const addRecommendationsToDesign = () => {
+  // suggested for. The background photo is rendered with preserveAspectRatio
+  // "slice" (like CSS background-size:cover), so unless the photo's aspect
+  // ratio happens to match the canvas exactly, it's scaled up and cropped on
+  // one axis — a naive x%/y% -> canvas-px mapping would land recommendations
+  // off from where they actually appear in the visible photo. Reproduce that
+  // same cover-crop math here so a marker at (x%, y%) of the original photo
+  // lands on the same visible pixel on the canvas.
+  const addRecommendationsToDesign = async () => {
     if (!aiResult?.recommendations?.length) return;
+    let mapX = (pct: number) => (pct / 100) * widthPx;
+    let mapY = (pct: number) => (pct / 100) * heightPx;
+    if (backgroundImage) {
+      try {
+        const img = await loadImageElement(backgroundImage);
+        const canvasAspect = widthPx / heightPx;
+        const imgAspect = img.naturalWidth / img.naturalHeight;
+        const scale = imgAspect > canvasAspect ? heightPx / img.naturalHeight : widthPx / img.naturalWidth;
+        const offsetXPx = (img.naturalWidth * scale - widthPx) / 2;
+        const offsetYPx = (img.naturalHeight * scale - heightPx) / 2;
+        mapX = pct => Math.min(widthPx, Math.max(0, (pct / 100) * img.naturalWidth * scale - offsetXPx));
+        mapY = pct => Math.min(heightPx, Math.max(0, (pct / 100) * img.naturalHeight * scale - offsetYPx));
+      } catch {
+        // Fall back to the naive percentage mapping if the photo fails to (re)load.
+      }
+    }
     const newElements: DesignElement[] = aiResult.recommendations.map(r => {
       const isTree = r.type === 'tree';
       return {
         id: uid(),
         type: isTree ? 'tree' : 'plant',
-        cx: (r.x / 100) * widthPx,
-        cy: (r.y / 100) * heightPx,
+        cx: mapX(r.x),
+        cy: mapY(r.y),
         radius: isTree ? 18 : 9,
         label: r.commonName,
         color: isTree ? '#2e7d32' : '#558b2f',
