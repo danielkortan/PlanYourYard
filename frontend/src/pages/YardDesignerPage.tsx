@@ -8,7 +8,9 @@ import {
   Save, RotateCcw, ZoomIn, ZoomOut,
   Square, Minus, Camera, X, ChevronRight,
   Grid3X3, Pencil, Printer, FileImage, FileCode, Eye,
+  Sparkles, RefreshCw, Plus,
 } from 'lucide-react';
+import { StructuredAnalysisView, StructuredAnalysis } from '../components/YardAnalysisMap';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -525,6 +527,12 @@ export default function YardDesignerPage() {
   const [zoom, setZoom]             = useState(1);
   const [backgroundImage, setBackgroundImage] = useState<string | null>(loadBackground);
   const [projectName, setProjectName] = useState<string | null>(null);
+  const [projectAddress, setProjectAddress] = useState<string | null>(null);
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState<StructuredAnalysis | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiDemo, setAiDemo] = useState(false);
   const [selectedTreeSpecies, setSelectedTreeSpecies] = useState('Oak');
   const [selectedPlantSpecies, setSelectedPlantSpecies] = useState('Rose');
   const [treeCustomInput, setTreeCustomInput] = useState<string | null>(null);
@@ -565,6 +573,7 @@ export default function YardDesignerPage() {
     }).then(res => {
       const proj = res.data;
       setProjectName(proj.name || null);
+      setProjectAddress(proj.address || null);
       if (proj.design && typeof proj.design === 'object') {
         setDesign({ ...defaultDesign(), ...proj.design });
       }
@@ -912,6 +921,67 @@ export default function YardDesignerPage() {
     } else {
       toast.success('Design saved!');
     }
+  };
+
+  // ── AI Yard Analysis ──
+  const runYardAiAnalysis = async () => {
+    if (!backgroundImage) {
+      toast.error('Upload a background photo first — see "Background Photo" below.');
+      return;
+    }
+    setAiModalOpen(true);
+    setAiLoading(true);
+    setAiResult(null);
+    setAiError(null);
+    try {
+      const blob = await fetch(backgroundImage).then(r => r.blob());
+      const formData = new FormData();
+      formData.append('image', new File([blob], 'yard.jpg', { type: blob.type || 'image/jpeg' }));
+      formData.append('task', 'analyze');
+      if (projectAddress) formData.append('location', projectAddress);
+      const res = await axios.post('/api/ai/analyze', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      if (res.data.structured) {
+        setAiResult(res.data.structured);
+        setAiDemo(res.data.demo || false);
+      } else {
+        setAiError("The AI response couldn't be formatted into a Yard Map this time. Please try again.");
+      }
+    } catch (err: any) {
+      // Demo mode (no ANTHROPIC_API_KEY) responds with a 503 but still includes
+      // a usable structured demo analysis — show it instead of a bare error.
+      if (err.response?.data?.structured) {
+        setAiResult(err.response.data.structured);
+        setAiDemo(true);
+      } else {
+        setAiError(err.response?.data?.error || 'Analysis failed. Please try again.');
+      }
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  // Places each AI-recommended plant onto the canvas at the position it was
+  // suggested for, mapping the analysis photo's 0-100% coordinates directly
+  // onto the canvas (the background photo already covers the full canvas).
+  const addRecommendationsToDesign = () => {
+    if (!aiResult?.recommendations?.length) return;
+    const newElements: DesignElement[] = aiResult.recommendations.map(r => {
+      const isTree = r.type === 'tree';
+      return {
+        id: uid(),
+        type: isTree ? 'tree' : 'plant',
+        cx: (r.x / 100) * widthPx,
+        cy: (r.y / 100) * heightPx,
+        radius: isTree ? 18 : 9,
+        label: r.commonName,
+        color: isTree ? '#2e7d32' : '#558b2f',
+      };
+    });
+    save({ ...design, elements: [...design.elements, ...newElements] });
+    toast.success(`Added ${newElements.length} recommended plant${newElements.length === 1 ? '' : 's'} to your design!`);
+    setAiModalOpen(false);
   };
 
   // ── Quick Add ──
@@ -1561,6 +1631,28 @@ export default function YardDesignerPage() {
             <Eye className="w-4 h-4 text-purple-400 flex-shrink-0" />
             Analyze / Visualize Yard
           </button>
+          <button
+            onClick={runYardAiAnalysis}
+            disabled={aiLoading}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-forest-50 hover:text-forest-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed mt-1">
+            {aiLoading ? (
+              <RefreshCw className="w-4 h-4 text-forest-400 flex-shrink-0 animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4 text-forest-400 flex-shrink-0" />
+            )}
+            {aiLoading ? 'Analyzing…' : 'Analyze This Yard with AI'}
+          </button>
+          {aiResult && !aiModalOpen && (
+            <button
+              onClick={() => setAiModalOpen(true)}
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-forest-600 hover:bg-forest-50 transition-colors">
+              <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" />
+              View last AI analysis
+            </button>
+          )}
+          <p className="text-xs text-gray-400 px-1 mt-1">
+            Runs AI analysis on your background photo and overlays plant recommendations right on this project.
+          </p>
         </div>
 
         {/* ── Download ── */}
@@ -1599,6 +1691,62 @@ export default function YardDesignerPage() {
           onSave={handleLabelSave}
           onCancel={() => { setShowLabelDialog(false); setPendingLabelPos(null); }}
         />
+      )}
+
+      {aiModalOpen && (
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <Sparkles className="w-5 h-5 text-forest-600" />
+                <h2 className="font-semibold text-gray-900">AI Yard Analysis</h2>
+                {aiDemo && (
+                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">Demo Mode</span>
+                )}
+              </div>
+              <button onClick={() => setAiModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto">
+              {aiLoading && (
+                <div className="flex flex-col items-center justify-center py-16 text-gray-500">
+                  <RefreshCw className="w-8 h-8 animate-spin mb-3 text-forest-500" />
+                  Analyzing your yard photo with AI…
+                </div>
+              )}
+              {!aiLoading && aiError && (
+                <div className="text-center py-10">
+                  <p className="text-sm text-gray-600 mb-4">{aiError}</p>
+                  <button onClick={runYardAiAnalysis} className="btn-outline text-sm">
+                    <RefreshCw className="w-4 h-4" />
+                    Retry Analysis
+                  </button>
+                </div>
+              )}
+              {!aiLoading && aiResult && (
+                <StructuredAnalysisView
+                  data={aiResult}
+                  onChange={updater => setAiResult(prev => (prev ? updater(prev) : prev))}
+                  footer={aiResult.recommendations?.length > 0 && (
+                    <div className="pt-4 border-t border-gray-100">
+                      <button
+                        onClick={addRecommendationsToDesign}
+                        className="w-full flex items-center justify-center gap-2 bg-forest-600 hover:bg-forest-700 text-white font-semibold px-4 py-3 rounded-xl transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add These {aiResult.recommendations.length} Recommended Plants to My Design
+                      </button>
+                      <p className="text-xs text-gray-400 mt-2 text-center">
+                        Places each plant on the canvas at the position the AI suggested. You can drag them anywhere afterward.
+                      </p>
+                    </div>
+                  )}
+                />
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
