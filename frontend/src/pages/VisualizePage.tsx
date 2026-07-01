@@ -7,8 +7,32 @@ import {
   Upload, Eye, TreePine, X, RefreshCw,
   Sparkles, Info, Search, ArrowRight,
   Leaf, Camera, Plus, Folder, MapPin,
+  Maximize2, Download,
 } from 'lucide-react';
 import { Plant } from '../types';
+
+interface PlantRecommendation {
+  commonName: string;
+  scientificName: string;
+  type: string;
+  whyItWorks: string;
+  whenToBuy: string;
+  howToPlant: string;
+  care: string;
+  location: string;
+}
+
+interface StructuredAnalysis {
+  siteAssessment: string;
+  landscapeOpportunities: string;
+  currentPlants: string;
+  recommendations: PlantRecommendation[];
+  designConcept: {
+    title: string;
+    description: string;
+    steps: string[];
+  };
+}
 
 interface AerialMarker {
   id: number;
@@ -74,6 +98,124 @@ function MarkdownResult({ text }: { text: string }) {
   );
 }
 
+function StructuredAnalysisView({ data }: { data: StructuredAnalysis }) {
+  return (
+    <div className="space-y-6">
+      <section>
+        <h3 className="text-sm font-semibold text-gray-900 mb-1">Site Assessment</h3>
+        <p className="text-sm text-gray-700 leading-relaxed">{data.siteAssessment}</p>
+      </section>
+      <section>
+        <h3 className="text-sm font-semibold text-gray-900 mb-1">Landscape Opportunities</h3>
+        <p className="text-sm text-gray-700 leading-relaxed">{data.landscapeOpportunities}</p>
+      </section>
+      {data.currentPlants && (
+        <section>
+          <h3 className="text-sm font-semibold text-gray-900 mb-1">Existing Plants Identified</h3>
+          <p className="text-sm text-gray-700 leading-relaxed">{data.currentPlants}</p>
+        </section>
+      )}
+      {data.recommendations?.length > 0 && (
+        <section>
+          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-1.5">
+            <TreePine className="w-4 h-4 text-forest-600" />
+            Recommended Plants to Purchase
+          </h3>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {data.recommendations.map((r, i) => (
+              <div key={i} className="border border-gray-200 rounded-xl p-3 bg-white">
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <div>
+                    <p className="font-semibold text-gray-900 text-sm">{r.commonName}</p>
+                    <p className="text-xs text-gray-500 italic">{r.scientificName}</p>
+                  </div>
+                  <span className="text-xs bg-forest-100 text-forest-700 px-2 py-0.5 rounded-full shrink-0">{r.type}</span>
+                </div>
+                <p className="text-xs text-gray-600 mb-2">{r.whyItWorks}</p>
+                <ul className="text-xs text-gray-700 space-y-1">
+                  <li><span className="font-medium text-gray-900">Buy/plant timing: </span>{r.whenToBuy}</li>
+                  <li><span className="font-medium text-gray-900">How to plant: </span>{r.howToPlant}</li>
+                  <li><span className="font-medium text-gray-900">Care: </span>{r.care}</li>
+                  <li><span className="font-medium text-gray-900">Location: </span>{r.location}</li>
+                </ul>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {data.designConcept && (
+        <section>
+          <h3 className="text-sm font-semibold text-gray-900 mb-1">Design Concept: {data.designConcept.title}</h3>
+          <p className="text-sm text-gray-700 leading-relaxed mb-2">{data.designConcept.description}</p>
+          <ol className="list-decimal list-inside text-sm text-gray-700 space-y-1">
+            {data.designConcept.steps?.map((s, i) => <li key={i}>{s}</li>)}
+          </ol>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function buildReportHtml(opts: {
+  title: string;
+  imageDataUrl?: string | null;
+  structured?: StructuredAnalysis | null;
+  rawText?: string | null;
+  isDemo?: boolean;
+}): string {
+  const { title, imageDataUrl, structured, rawText, isDemo } = opts;
+  let bodyHtml = '';
+
+  if (structured) {
+    bodyHtml += `<h2>Site Assessment</h2><p>${escapeHtml(structured.siteAssessment)}</p>`;
+    bodyHtml += `<h2>Landscape Opportunities</h2><p>${escapeHtml(structured.landscapeOpportunities)}</p>`;
+    if (structured.currentPlants) {
+      bodyHtml += `<h2>Existing Plants Identified</h2><p>${escapeHtml(structured.currentPlants)}</p>`;
+    }
+    if (structured.recommendations?.length) {
+      bodyHtml += `<h2>Recommended Plants to Purchase</h2>`;
+      structured.recommendations.forEach(r => {
+        bodyHtml += `
+          <div class="plant">
+            <h3>${escapeHtml(r.commonName)} <em>(${escapeHtml(r.scientificName)})</em> &mdash; ${escapeHtml(r.type)}</h3>
+            <p>${escapeHtml(r.whyItWorks)}</p>
+            <ul>
+              <li><strong>Buy/plant timing:</strong> ${escapeHtml(r.whenToBuy)}</li>
+              <li><strong>How to plant:</strong> ${escapeHtml(r.howToPlant)}</li>
+              <li><strong>Care:</strong> ${escapeHtml(r.care)}</li>
+              <li><strong>Location:</strong> ${escapeHtml(r.location)}</li>
+            </ul>
+          </div>`;
+      });
+    }
+    if (structured.designConcept) {
+      bodyHtml += `<h2>Design Concept: ${escapeHtml(structured.designConcept.title)}</h2><p>${escapeHtml(structured.designConcept.description)}</p><ol>${(structured.designConcept.steps || []).map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ol>`;
+    }
+  } else if (rawText) {
+    bodyHtml += `<div class="raw">${escapeHtml(rawText).replace(/\n/g, '<br/>')}</div>`;
+  }
+
+  return `<!doctype html><html><head><meta charset="utf-8"/><title>${escapeHtml(title)}</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; color: #1f2937; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.15rem; margin-top: 1.5rem; border-bottom: 1px solid #e5e7eb; padding-bottom: .25rem; }
+  h3 { font-size: 1rem; margin-bottom: .25rem; }
+  .plant { margin-bottom: 1.25rem; padding: .75rem 1rem; border: 1px solid #e5e7eb; border-radius: .5rem; page-break-inside: avoid; }
+  img.hero { max-width: 100%; border-radius: .5rem; margin-bottom: 1rem; }
+  ul, ol { margin: .25rem 0 .5rem 1.25rem; }
+  .badge { display: inline-block; background: #fef3c7; color: #92400e; font-size: .75rem; padding: .15rem .5rem; border-radius: 999px; margin-left: .5rem; }
+</style></head><body>
+<h1>${escapeHtml(title)}${isDemo ? '<span class="badge">Demo Mode</span>' : ''}</h1>
+${imageDataUrl ? `<img class="hero" src="${imageDataUrl}" />` : ''}
+${bodyHtml}
+</body></html>`;
+}
+
 export default function VisualizePage() {
   const location = useLocation();
   const preselectedPlant = location.state?.plant as Plant | undefined;
@@ -102,7 +244,9 @@ export default function VisualizePage() {
 
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [structured, setStructured] = useState<StructuredAnalysis | null>(null);
   const [isDemo, setIsDemo] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>();
   const futureSearchTimeout = useRef<ReturnType<typeof setTimeout>>();
@@ -124,6 +268,7 @@ export default function VisualizePage() {
     reader.onload = e => setImagePreview(e.target?.result as string);
     reader.readAsDataURL(file);
     setResult(null);
+    setStructured(null);
     toast.success('Image ready for analysis!');
   }, []);
 
@@ -189,6 +334,7 @@ export default function VisualizePage() {
   const runAnalysis = async () => {
     setLoading(true);
     setResult(null);
+    setStructured(null);
 
     try {
       if (mode === 'landscape') {
@@ -267,6 +413,7 @@ export default function VisualizePage() {
 
       const text = res.data.analysis || res.data.visualization || '';
       setResult(text);
+      setStructured(res.data.structured || null);
       setIsDemo(res.data.demo || false);
 
       if (res.data.demo) {
@@ -279,6 +426,7 @@ export default function VisualizePage() {
       toast.error(msg);
       if (err.response?.data?.analysis || err.response?.data?.visualization) {
         setResult(err.response.data.analysis || err.response.data.visualization);
+        setStructured(err.response.data.structured || null);
         setIsDemo(true);
       }
     } finally {
@@ -296,6 +444,32 @@ export default function VisualizePage() {
   const analyzeButtonDisabled = mode === 'landscape'
     ? loading || (existingPlants.length === 0 && futurePlants.length === 0)
     : loading || !uploadedFile;
+
+  const resultTitle = mode === 'analyze'
+    ? 'Yard Analysis'
+    : mode === 'landscape'
+    ? 'Landscape View'
+    : `Growth Visualization: ${GROWTH_STAGES.find(s => s.value === growthStage)?.label}`;
+
+  const exportPDF = () => {
+    if (!result && !structured) return;
+    const html = buildReportHtml({
+      title: resultTitle,
+      imageDataUrl: mode !== 'landscape' ? imagePreview : null,
+      structured,
+      rawText: result,
+      isDemo,
+    });
+    const win = window.open('', '_blank');
+    if (!win) {
+      toast.error('Please allow popups to export as PDF');
+      return;
+    }
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 300);
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
@@ -331,63 +505,152 @@ export default function VisualizePage() {
         </div>
       )}
 
-      <div className="grid lg:grid-cols-5 gap-8">
-        {/* Left: Controls */}
-        <div className="lg:col-span-2 space-y-5">
-
-          {/* Mode selector */}
-          <div className="card p-4">
-            <h2 className="font-semibold text-gray-900 mb-3">Analysis Mode</h2>
-            <div className="grid grid-cols-2 gap-2">
-              {projectId && (
-                <button
-                  onClick={() => setMode('landscape')}
-                  className={`col-span-2 p-3 rounded-xl border-2 text-left transition-all ${
-                    mode === 'landscape'
-                      ? 'border-forest-500 bg-forest-50'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <Eye className={`w-5 h-5 mb-1.5 ${mode === 'landscape' ? 'text-forest-600' : 'text-gray-400'}`} />
-                  <p className={`text-sm font-medium ${mode === 'landscape' ? 'text-forest-700' : 'text-gray-700'}`}>
-                    Landscape View
-                  </p>
-                  <p className="text-xs text-gray-500 mt-0.5">Visualize existing + future plants together</p>
-                </button>
-              )}
+      {/* Top row: Mode | Upload Photo | Property Location — one line on desktop */}
+      <div className="grid md:grid-cols-3 gap-4 mb-5">
+        {/* Mode selector */}
+        <div className="card p-4">
+          <h2 className="font-semibold text-gray-900 mb-3">Analysis Mode</h2>
+          <div className={`grid gap-2 ${projectId ? 'grid-cols-1' : 'grid-cols-1'}`}>
+            {projectId && (
               <button
-                onClick={() => setMode('analyze')}
-                className={`p-3 rounded-xl border-2 text-left transition-all ${
-                  mode === 'analyze'
+                onClick={() => setMode('landscape')}
+                className={`p-2.5 rounded-xl border-2 text-left transition-all ${
+                  mode === 'landscape'
                     ? 'border-forest-500 bg-forest-50'
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
               >
-                <Search className={`w-5 h-5 mb-1.5 ${mode === 'analyze' ? 'text-forest-600' : 'text-gray-400'}`} />
+                <div className="flex items-center gap-2">
+                  <Eye className={`w-4 h-4 shrink-0 ${mode === 'landscape' ? 'text-forest-600' : 'text-gray-400'}`} />
+                  <p className={`text-sm font-medium ${mode === 'landscape' ? 'text-forest-700' : 'text-gray-700'}`}>
+                    Landscape View
+                  </p>
+                </div>
+                <p className="text-xs text-gray-500 mt-0.5">Visualize existing + future plants together</p>
+              </button>
+            )}
+            <button
+              onClick={() => setMode('analyze')}
+              className={`p-2.5 rounded-xl border-2 text-left transition-all ${
+                mode === 'analyze'
+                  ? 'border-forest-500 bg-forest-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Search className={`w-4 h-4 shrink-0 ${mode === 'analyze' ? 'text-forest-600' : 'text-gray-400'}`} />
                 <p className={`text-sm font-medium ${mode === 'analyze' ? 'text-forest-700' : 'text-gray-700'}`}>
                   Yard Analysis
                 </p>
-                <p className="text-xs text-gray-500 mt-0.5">Assess site & recommend plants</p>
-              </button>
-              <button
-                onClick={() => setMode('visualize')}
-                className={`p-3 rounded-xl border-2 text-left transition-all ${
-                  mode === 'visualize'
-                    ? 'border-purple-500 bg-purple-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <Sparkles className={`w-5 h-5 mb-1.5 ${mode === 'visualize' ? 'text-purple-600' : 'text-gray-400'}`} />
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">Assess site & recommend plants</p>
+            </button>
+            <button
+              onClick={() => setMode('visualize')}
+              className={`p-2.5 rounded-xl border-2 text-left transition-all ${
+                mode === 'visualize'
+                  ? 'border-purple-500 bg-purple-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Sparkles className={`w-4 h-4 shrink-0 ${mode === 'visualize' ? 'text-purple-600' : 'text-gray-400'}`} />
                 <p className={`text-sm font-medium ${mode === 'visualize' ? 'text-purple-700' : 'text-gray-700'}`}>
                   Growth Visualizer
                 </p>
-                <p className="text-xs text-gray-500 mt-0.5">See plant growth over time</p>
-              </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">See plant growth over time</p>
+            </button>
+          </div>
+        </div>
+
+        {/* Upload Photo (photo modes) / placeholder (landscape mode) */}
+        {mode !== 'landscape' ? (
+          <div className="card p-4">
+            <h2 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+              <Camera className="w-4 h-4 text-gray-400" />
+              Upload Photo
+            </h2>
+            <div
+              {...getRootProps()}
+              className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors ${
+                isDragActive
+                  ? 'border-forest-400 bg-forest-50'
+                  : imagePreview
+                  ? 'border-forest-300 bg-forest-50/50'
+                  : 'border-gray-300 hover:border-forest-400 hover:bg-gray-50'
+              }`}
+            >
+              <input {...getInputProps()} />
+              {imagePreview ? (
+                <div className="relative">
+                  <img
+                    src={imagePreview}
+                    alt="Uploaded yard"
+                    className="w-full h-24 object-cover rounded-lg mb-2"
+                  />
+                  <button
+                    onClick={e => {
+                      e.stopPropagation();
+                      setImagePreview(null);
+                      setUploadedFile(null);
+                      setResult(null);
+                      setStructured(null);
+                    }}
+                    className="absolute top-2 right-2 bg-white/90 text-gray-700 rounded-full p-1 hover:bg-white shadow"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                  <p className="text-xs text-forest-600 font-medium truncate">{uploadedFile?.name}</p>
+                  <p className="text-xs text-gray-400">Click to change image</p>
+                </div>
+              ) : (
+                <>
+                  <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1.5" />
+                  <p className="text-sm font-medium text-gray-700">
+                    {isDragActive ? 'Drop image here' : 'Drag & drop or click'}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">JPG, PNG, WebP up to 20MB</p>
+                </>
+              )}
             </div>
           </div>
+        ) : (
+          <div className="card p-4 flex flex-col justify-center">
+            <h2 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+              <Folder className="w-4 h-4 text-forest-500" />
+              Landscape View Mode
+            </h2>
+            <p className="text-xs text-gray-500">
+              No photo needed — AI generates a description from the existing and planned plants listed below.
+            </p>
+          </div>
+        )}
 
-          {/* Landscape mode: existing plants */}
-          {mode === 'landscape' && (
+        {/* Property Location */}
+        <div className="card p-4">
+          <label className="label">
+            Property Location <span className="text-gray-400 font-normal">(optional)</span>
+          </label>
+          <div className="relative">
+            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              value={location2}
+              onChange={e => setLocation2(e.target.value)}
+              placeholder="e.g., Northern Virginia, Zone 7"
+              className="input pl-10 text-sm"
+            />
+          </div>
+          <p className="text-xs text-gray-400 mt-1">Helps AI tailor recommendations to your climate</p>
+        </div>
+      </div>
+
+      <div className="space-y-5 mb-5">
+        {/* Landscape mode: existing + future plants */}
+        {mode === 'landscape' && (
+          <div className="grid md:grid-cols-2 gap-4">
+            {/* existing */}
             <div className="card p-4">
               <h2 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
                 <TreePine className="w-4 h-4 text-forest-600" />
@@ -412,10 +675,8 @@ export default function VisualizePage() {
                 </ul>
               )}
             </div>
-          )}
 
-          {/* Landscape mode: future plants */}
-          {mode === 'landscape' && (
+            {/* future */}
             <div className="card p-4">
               <h2 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-purple-500" />
@@ -464,63 +725,12 @@ export default function VisualizePage() {
                 </ul>
               )}
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Image upload (photo modes only) */}
-          {mode !== 'landscape' && (
-            <div className="card p-4">
-              <h2 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                <Camera className="w-4 h-4 text-gray-400" />
-                Upload Photo
-              </h2>
-              <div
-                {...getRootProps()}
-                className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
-                  isDragActive
-                    ? 'border-forest-400 bg-forest-50'
-                    : imagePreview
-                    ? 'border-forest-300 bg-forest-50/50'
-                    : 'border-gray-300 hover:border-forest-400 hover:bg-gray-50'
-                }`}
-              >
-                <input {...getInputProps()} />
-                {imagePreview ? (
-                  <div className="relative">
-                    <img
-                      src={imagePreview}
-                      alt="Uploaded yard"
-                      className="w-full h-40 object-cover rounded-lg mb-2"
-                    />
-                    <button
-                      onClick={e => {
-                        e.stopPropagation();
-                        setImagePreview(null);
-                        setUploadedFile(null);
-                        setResult(null);
-                      }}
-                      className="absolute top-2 right-2 bg-white/90 text-gray-700 rounded-full p-1 hover:bg-white shadow"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                    <p className="text-xs text-forest-600 font-medium">{uploadedFile?.name}</p>
-                    <p className="text-xs text-gray-400">Click to change image</p>
-                  </div>
-                ) : (
-                  <>
-                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                    <p className="text-sm font-medium text-gray-700">
-                      {isDragActive ? 'Drop image here' : 'Drag & drop or click to upload'}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">House exterior, yard, or aerial photo</p>
-                    <p className="text-xs text-gray-400">JPG, PNG, WebP up to 20MB</p>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Plant selection (visualize mode) */}
-          {mode === 'visualize' && (
+        {/* Plant selection + growth stage (visualize mode) */}
+        {mode === 'visualize' && (
+          <div className="grid md:grid-cols-2 gap-4">
             <div className="card p-4">
               <h2 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
                 <TreePine className="w-4 h-4 text-forest-600" />
@@ -577,10 +787,7 @@ export default function VisualizePage() {
                 </Link>
               </div>
             </div>
-          )}
 
-          {/* Growth stage (visualize mode) */}
-          {mode === 'visualize' && (
             <div className="card p-4">
               <h2 className="font-semibold text-gray-900 mb-3">Growth Stage</h2>
               <div className="space-y-2">
@@ -611,200 +818,225 @@ export default function VisualizePage() {
                 ))}
               </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Location */}
-          <div className="card p-4">
-            <label className="label">
-              Property Location <span className="text-gray-400 font-normal">(optional)</span>
-            </label>
-            <input
-              type="text"
-              value={location2}
-              onChange={e => setLocation2(e.target.value)}
-              placeholder="e.g., Northern Virginia, Zone 7"
-              className="input text-sm"
-            />
-            <p className="text-xs text-gray-400 mt-1">Helps AI tailor recommendations to your climate</p>
+        {/* Analyze button */}
+        <button
+          onClick={runAnalysis}
+          disabled={analyzeButtonDisabled}
+          className="w-full bg-gradient-to-r from-forest-600 to-forest-700 hover:from-forest-700 hover:to-forest-800 disabled:from-gray-300 disabled:to-gray-300 text-white font-semibold px-6 py-4 rounded-xl flex items-center justify-center gap-3 transition-all shadow-sm disabled:cursor-not-allowed"
+        >
+          {loading ? (
+            <>
+              <RefreshCw className="w-5 h-5 animate-spin" />
+              Analyzing with AI...
+            </>
+          ) : (
+            <>
+              <Sparkles className="w-5 h-5" />
+              {analyzeButtonLabel()}
+            </>
+          )}
+        </button>
+
+        {/* API key notice — only shown when backend returns demo mode */}
+        {isDemo && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700 flex items-start gap-2">
+            <Info className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
+            <div>
+              <p className="font-medium mb-1">AI Features Require API Key</p>
+              <p>Add your <code className="bg-amber-100 px-1 rounded">ANTHROPIC_API_KEY</code> to{' '}
+              <code className="bg-amber-100 px-1 rounded">backend/.env</code> for real AI analysis.
+              Without it, demo responses are shown.</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Results — full width block */}
+      {result ? (
+        <div className="card p-6 animate-fade-in">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                mode === 'visualize' ? 'bg-purple-100' : 'bg-forest-100'
+              }`}>
+                {mode === 'visualize' ? (
+                  <Sparkles className="w-4 h-4 text-purple-600" />
+                ) : (
+                  <Eye className="w-4 h-4 text-forest-600" />
+                )}
+              </div>
+              <div>
+                <h2 className="font-semibold text-gray-900">{resultTitle}</h2>
+                {selectedPlant && mode === 'visualize' && (
+                  <p className="text-xs text-gray-500">{selectedPlant.commonName} · {selectedPlant.scientificName}</p>
+                )}
+                {mode === 'landscape' && (
+                  <p className="text-xs text-gray-500">
+                    {existingPlants.length} existing · {futurePlants.length} planned
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {isDemo && (
+                <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
+                  Demo Mode
+                </span>
+              )}
+              <button onClick={() => setExpanded(true)} className="btn-outline text-sm" title="Expand to full page">
+                <Maximize2 className="w-4 h-4" />
+                Expand
+              </button>
+              <button onClick={exportPDF} className="btn-outline text-sm" title="Export as PDF">
+                <Download className="w-4 h-4" />
+                Export PDF
+              </button>
+              <button onClick={() => { setResult(null); setStructured(null); }} className="text-gray-400 hover:text-gray-600">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
-          {/* Analyze button */}
-          <button
-            onClick={runAnalysis}
-            disabled={analyzeButtonDisabled}
-            className="w-full bg-gradient-to-r from-forest-600 to-forest-700 hover:from-forest-700 hover:to-forest-800 disabled:from-gray-300 disabled:to-gray-300 text-white font-semibold px-6 py-4 rounded-xl flex items-center justify-center gap-3 transition-all shadow-sm disabled:cursor-not-allowed"
-          >
-            {loading ? (
-              <>
-                <RefreshCw className="w-5 h-5 animate-spin" />
-                Analyzing with AI...
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-5 h-5" />
-                {analyzeButtonLabel()}
-              </>
+          {imagePreview && mode !== 'landscape' && (
+            <div className="mb-4">
+              <img
+                src={imagePreview}
+                alt="Analyzed yard"
+                className="w-full max-h-64 object-cover rounded-xl border border-gray-200"
+              />
+            </div>
+          )}
+
+          <div className="bg-gray-50 rounded-xl p-4">
+            {structured ? <StructuredAnalysisView data={structured} /> : <MarkdownResult text={result} />}
+          </div>
+
+          <div className="flex gap-3 mt-4 pt-4 border-t border-gray-100">
+            <button onClick={runAnalysis} className="btn-outline text-sm">
+              <RefreshCw className="w-4 h-4" />
+              Re-analyze
+            </button>
+            {mode === 'analyze' && (
+              <Link to="/plants" className="btn-secondary text-sm">
+                <TreePine className="w-4 h-4" />
+                Browse Plants
+              </Link>
             )}
-          </button>
-
-          {/* API key notice — only shown when backend returns demo mode */}
-          {isDemo && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700 flex items-start gap-2">
-              <Info className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
-              <div>
-                <p className="font-medium mb-1">AI Features Require API Key</p>
-                <p>Add your <code className="bg-amber-100 px-1 rounded">ANTHROPIC_API_KEY</code> to{' '}
-                <code className="bg-amber-100 px-1 rounded">backend/.env</code> for real AI analysis.
-                Without it, demo responses are shown.</p>
-              </div>
-            </div>
-          )}
+            {mode === 'analyze' && (
+              <button onClick={() => setMode('visualize')} className="btn-secondary text-sm">
+                <Sparkles className="w-4 h-4" />
+                Try Visualizer
+              </button>
+            )}
+          </div>
         </div>
-
-        {/* Right: Results */}
-        <div className="lg:col-span-3">
-          {result ? (
-            <div className="card p-6 animate-fade-in">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                    mode === 'visualize' ? 'bg-purple-100' : mode === 'landscape' ? 'bg-forest-100' : 'bg-forest-100'
-                  }`}>
-                    {mode === 'visualize' ? (
-                      <Sparkles className="w-4 h-4 text-purple-600" />
-                    ) : (
-                      <Eye className="w-4 h-4 text-forest-600" />
-                    )}
-                  </div>
-                  <div>
-                    <h2 className="font-semibold text-gray-900">
-                      {mode === 'analyze'
-                        ? 'Yard Analysis'
-                        : mode === 'landscape'
-                        ? 'Landscape View'
-                        : `Growth Visualization: ${GROWTH_STAGES.find(s => s.value === growthStage)?.label}`}
-                    </h2>
-                    {selectedPlant && mode === 'visualize' && (
-                      <p className="text-xs text-gray-500">{selectedPlant.commonName} · {selectedPlant.scientificName}</p>
-                    )}
-                    {mode === 'landscape' && (
-                      <p className="text-xs text-gray-500">
-                        {existingPlants.length} existing · {futurePlants.length} planned
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {isDemo && (
-                    <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
-                      Demo Mode
-                    </span>
-                  )}
-                  <button onClick={() => setResult(null)} className="text-gray-400 hover:text-gray-600">
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
+      ) : (
+        <div className="card p-8 text-center flex flex-col items-center justify-center min-h-[400px]">
+          {mode === 'landscape' ? (
+            <>
+              <div className="w-16 h-16 bg-forest-100 rounded-2xl flex items-center justify-center mb-4">
+                <Eye className="w-8 h-8 text-forest-600" />
               </div>
-
-              {imagePreview && mode !== 'landscape' && (
-                <div className="mb-4">
-                  <img
-                    src={imagePreview}
-                    alt="Analyzed yard"
-                    className="w-full max-h-64 object-cover rounded-xl border border-gray-200"
-                  />
-                </div>
-              )}
-
-              <div className="bg-gray-50 rounded-xl p-4">
-                <MarkdownResult text={result} />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Landscape View</h3>
+              <p className="text-gray-500 text-sm mb-2">
+                AI will describe how your yard looks today with existing plants, and how it will evolve once planned plants are added.
+              </p>
+              <p className="text-gray-400 text-xs">
+                {existingPlants.length} existing · {futurePlants.length} planned — click Generate when ready.
+              </p>
+            </>
+          ) : uploadedFile ? (
+            <>
+              <div className="w-16 h-16 bg-forest-100 rounded-2xl flex items-center justify-center mb-4">
+                <Sparkles className="w-8 h-8 text-forest-600" />
               </div>
-
-              <div className="flex gap-3 mt-4 pt-4 border-t border-gray-100">
-                <button onClick={runAnalysis} className="btn-outline text-sm">
-                  <RefreshCw className="w-4 h-4" />
-                  Re-analyze
-                </button>
-                {mode === 'analyze' && (
-                  <Link to="/plants" className="btn-secondary text-sm">
-                    <TreePine className="w-4 h-4" />
-                    Browse Plants
-                  </Link>
-                )}
-                {mode === 'analyze' && (
-                  <button onClick={() => setMode('visualize')} className="btn-secondary text-sm">
-                    <Sparkles className="w-4 h-4" />
-                    Try Visualizer
-                  </button>
-                )}
-              </div>
-            </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Ready to Analyze!</h3>
+              <p className="text-gray-500 text-sm mb-4">
+                {mode === 'analyze'
+                  ? "Click 'Analyze My Yard' to get AI landscape assessment and plant recommendations."
+                  : selectedPlant
+                  ? `Click 'Visualize Plant Growth' to see how ${selectedPlant.commonName} will look in your yard.`
+                  : "Select a plant and click 'Visualize Plant Growth' to see how it will look in your yard."}
+              </p>
+              <img
+                src={imagePreview!}
+                alt="Your yard"
+                className="w-full max-w-sm max-h-48 object-cover rounded-xl border border-gray-200"
+              />
+            </>
           ) : (
-            <div className="card p-8 text-center h-full flex flex-col items-center justify-center min-h-[400px]">
-              {mode === 'landscape' ? (
-                <>
-                  <div className="w-16 h-16 bg-forest-100 rounded-2xl flex items-center justify-center mb-4">
-                    <Eye className="w-8 h-8 text-forest-600" />
+            <>
+              <div className="w-20 h-20 bg-gradient-to-br from-forest-100 to-purple-100 rounded-2xl flex items-center justify-center mb-4">
+                <Eye className="w-10 h-10 text-forest-600" />
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">AI Yard Visualizer</h3>
+              <p className="text-gray-500 max-w-md mb-6">
+                Upload a photo of your house exterior or yard, then use AI to analyze
+                your landscape or visualize how specific plants will look as they grow over time.
+              </p>
+              <div className="grid grid-cols-2 gap-4 w-full max-w-sm text-left">
+                {[
+                  { icon: Search, title: 'Yard Analysis', desc: 'Get sun/shade assessment & plant recommendations' },
+                  { icon: Sparkles, title: 'Growth Visualizer', desc: 'See how plants look at 1, 3, 5, 10+ years' },
+                  { icon: TreePine, title: 'Plant Matching', desc: 'AI suggests plants suited to your conditions' },
+                  { icon: Camera, title: 'Any Photo', desc: 'Use house exterior, yard, or aerial photos' },
+                ].map((item, i) => (
+                  <div key={i} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl">
+                    <item.icon className="w-5 h-5 text-forest-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{item.title}</p>
+                      <p className="text-xs text-gray-500">{item.desc}</p>
+                    </div>
                   </div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Landscape View</h3>
-                  <p className="text-gray-500 text-sm mb-2">
-                    AI will describe how your yard looks today with existing plants, and how it will evolve once planned plants are added.
-                  </p>
-                  <p className="text-gray-400 text-xs">
-                    {existingPlants.length} existing · {futurePlants.length} planned — click Generate when ready.
-                  </p>
-                </>
-              ) : uploadedFile ? (
-                <>
-                  <div className="w-16 h-16 bg-forest-100 rounded-2xl flex items-center justify-center mb-4">
-                    <Sparkles className="w-8 h-8 text-forest-600" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Ready to Analyze!</h3>
-                  <p className="text-gray-500 text-sm mb-4">
-                    {mode === 'analyze'
-                      ? "Click 'Analyze My Yard' to get AI landscape assessment and plant recommendations."
-                      : selectedPlant
-                      ? `Click 'Visualize Plant Growth' to see how ${selectedPlant.commonName} will look in your yard.`
-                      : "Select a plant and click 'Visualize Plant Growth' to see how it will look in your yard."}
-                  </p>
-                  <img
-                    src={imagePreview!}
-                    alt="Your yard"
-                    className="w-full max-w-sm max-h-48 object-cover rounded-xl border border-gray-200"
-                  />
-                </>
-              ) : (
-                <>
-                  <div className="w-20 h-20 bg-gradient-to-br from-forest-100 to-purple-100 rounded-2xl flex items-center justify-center mb-4">
-                    <Eye className="w-10 h-10 text-forest-600" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-gray-900 mb-2">AI Yard Visualizer</h3>
-                  <p className="text-gray-500 max-w-md mb-6">
-                    Upload a photo of your house exterior or yard, then use AI to analyze
-                    your landscape or visualize how specific plants will look as they grow over time.
-                  </p>
-                  <div className="grid grid-cols-2 gap-4 w-full max-w-sm text-left">
-                    {[
-                      { icon: Search, title: 'Yard Analysis', desc: 'Get sun/shade assessment & plant recommendations' },
-                      { icon: Sparkles, title: 'Growth Visualizer', desc: 'See how plants look at 1, 3, 5, 10+ years' },
-                      { icon: TreePine, title: 'Plant Matching', desc: 'AI suggests plants suited to your conditions' },
-                      { icon: Camera, title: 'Any Photo', desc: 'Use house exterior, yard, or aerial photos' },
-                    ].map((item, i) => (
-                      <div key={i} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl">
-                        <item.icon className="w-5 h-5 text-forest-600 shrink-0 mt-0.5" />
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{item.title}</p>
-                          <p className="text-xs text-gray-500">{item.desc}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
-      </div>
+      )}
+
+      {/* Expanded full-page view */}
+      {expanded && result && (
+        <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
+          <div className="max-w-5xl mx-auto px-6 py-8">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">{resultTitle}</h2>
+                {isDemo && (
+                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
+                    Demo Mode
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={exportPDF} className="btn-outline text-sm">
+                  <Download className="w-4 h-4" />
+                  Export PDF
+                </button>
+                <button onClick={() => setExpanded(false)} className="btn-outline text-sm">
+                  <X className="w-4 h-4" />
+                  Close
+                </button>
+              </div>
+            </div>
+
+            {imagePreview && mode !== 'landscape' && (
+              <img
+                src={imagePreview}
+                alt="Analyzed yard"
+                className="w-full max-h-96 object-cover rounded-xl border border-gray-200 mb-6"
+              />
+            )}
+
+            <div className="bg-gray-50 rounded-xl p-6">
+              {structured ? <StructuredAnalysisView data={structured} /> : <MarkdownResult text={result} />}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
