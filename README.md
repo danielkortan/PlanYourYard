@@ -44,7 +44,7 @@ A full-stack web application for planning your yard with native plants, sun path
 
 **Backend**
 - Node.js + Express + TypeScript
-- Anthropic SDK (Claude claude-opus-4-6 Vision)
+- Anthropic SDK (Claude Opus for yard analysis, Claude Sonnet for growth/street visualizations)
 - SunCalc (sun path calculations)
 - Multer (image upload handling)
 - iNaturalist API integration

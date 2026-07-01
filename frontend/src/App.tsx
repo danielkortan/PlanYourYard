@@ -27,7 +27,7 @@ function AppRoutes() {
           <Route path="/" element={<Navigate to="/designer" replace />} />
           <Route path="/designer" element={<YardDesignerPage />} />
           <Route path="/plants" element={<PlantsPage />} />
-          <Route path="/visualize" element={<VisualizePage />} />
+          <Route path="/visualize" element={<ProtectedRoute><VisualizePage /></ProtectedRoute>} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/projects" element={<ProtectedRoute><ProjectsPage /></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute adminOnly><AdminPage /></ProtectedRoute>} />

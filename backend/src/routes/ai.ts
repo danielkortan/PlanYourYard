@@ -1,12 +1,29 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import Anthropic from '@anthropic-ai/sdk';
 import { AIAnalyzeRequest, NativePlant } from '../types';
 import { nativePlantsData } from '../data/nativePlants';
 import { PLANTING_SEASON_BY_TYPE, PLANTING_INSTRUCTIONS_BY_TYPE } from '../data/plantingGuidance';
+import { requireAuth, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+
+// Every AI call costs real money (Claude vision/text generation), so every route in this
+// file requires a logged-in user and is rate-limited per-user to prevent runaway spend
+// from a single account (accidental loops, scripted abuse, etc).
+router.use(requireAuth);
+
+const aiRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: AuthRequest) => (req.user ? `user:${req.user.id}` : ipKeyGenerator(req.ip!)),
+  message: { error: 'AI request limit reached (20 per hour). Please try again later.' },
+});
+router.use(aiRateLimiter);
 
 // Plants actually native to the app's Mid-Atlantic / Virginia focus area — the
 // only plants the AI is allowed to recommend, so every recommendation resolves
@@ -311,7 +328,7 @@ Please provide:
 Make this description vivid and specific enough that the homeowner can clearly picture the transformation.`;
 
     const response = await client.messages.create({
-      model: 'claude-opus-4-8',
+      model: 'claude-sonnet-5',
       max_tokens: 1500,
       messages: [
         {
@@ -407,7 +424,7 @@ Make the description specific, vivid, and inspirational so the homeowner can tru
   try {
     const client = getClient();
     const response = await client.messages.create({
-      model: 'claude-opus-4-8',
+      model: 'claude-sonnet-5',
       max_tokens: 1500,
       messages: [{ role: 'user', content: prompt }],
     });

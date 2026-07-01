@@ -84,12 +84,19 @@ try { db.exec('ALTER TABLE projects ADD COLUMN yard_design TEXT DEFAULT NULL'); 
 
 function seedAdmin() {
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@planyouryard.com';
-  const adminPassword = process.env.ADMIN_PASSWORD || 'PYY_Admin_2024!';
+  const adminPassword = process.env.ADMIN_PASSWORD;
   const adminName = process.env.ADMIN_NAME || 'Admin';
+
+  if (!adminPassword) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('ADMIN_PASSWORD must be set in production — refusing to seed an admin account with a known default password.');
+    }
+    console.warn('  ADMIN_PASSWORD not set — using an insecure default admin password for local development only.');
+  }
 
   const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(adminEmail);
   if (!existing) {
-    const hash = bcrypt.hashSync(adminPassword, 12);
+    const hash = bcrypt.hashSync(adminPassword || 'PYY_Admin_2024!', 12);
     db.prepare('INSERT INTO users (email, password_hash, name, role) VALUES (?, ?, ?, ?)').run(
       adminEmail, hash, adminName, 'admin'
     );
