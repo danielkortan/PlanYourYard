@@ -46,6 +46,7 @@ interface StructuredAnalysis {
   currentPlants: string;
   existingPlantsMap: ExistingPlantMapItem[];
   recommendations: PlantRecommendation[];
+  house: { xStart: number; xEnd: number };
   designConcept: {
     title: string;
     description: string;
@@ -139,7 +140,19 @@ function MarkdownResult({ text }: { text: string }) {
   );
 }
 
-function YardMapView({ existingPlantsMap, recommendations }: { existingPlantsMap: ExistingPlantMapItem[]; recommendations: PlantRecommendation[] }) {
+function YardMapView({
+  existingPlantsMap,
+  recommendations,
+  house,
+}: {
+  existingPlantsMap: ExistingPlantMapItem[];
+  recommendations: PlantRecommendation[];
+  house: { xStart: number; xEnd: number };
+}) {
+  const houseWidth = Math.max(10, house.xEnd - house.xStart);
+  const houseCenter = house.xStart + houseWidth / 2;
+  const roofHalfWidthPct = Math.min(14, houseWidth / 2 + 3);
+
   return (
     <div>
       <div className="relative w-full aspect-[4/3] bg-gradient-to-b from-lime-100 via-green-100 to-green-200 rounded-2xl border border-gray-200 shadow-inner overflow-hidden">
@@ -147,13 +160,15 @@ function YardMapView({ existingPlantsMap, recommendations }: { existingPlantsMap
         <div className="absolute inset-2 border-2 border-dashed border-green-900/10 rounded-lg pointer-events-none" />
 
         {/* House */}
-        <div className="absolute left-[22%] right-[22%] top-0 h-[17%]">
+        <div className="absolute top-0 h-[17%]" style={{ left: `${house.xStart}%`, width: `${houseWidth}%` }}>
           {/* roof */}
           <div
-            className="absolute left-1/2 -translate-x-1/2 -top-[9%] w-0 h-0"
+            className="absolute -top-[9%] w-0 h-0"
             style={{
-              borderLeft: '11% solid transparent',
-              borderRight: '11% solid transparent',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              borderLeft: `${roofHalfWidthPct}% solid transparent`,
+              borderRight: `${roofHalfWidthPct}% solid transparent`,
               borderBottom: '9% solid #78716c',
             }}
           />
@@ -166,7 +181,10 @@ function YardMapView({ existingPlantsMap, recommendations }: { existingPlantsMap
         </div>
 
         {/* Walkway */}
-        <div className="absolute left-1/2 -translate-x-1/2 top-[17%] bottom-0 w-[7%] bg-stone-200 border-x border-stone-300/60" />
+        <div
+          className="absolute top-[17%] bottom-0 w-[7%] bg-stone-200 border-x border-stone-300/60"
+          style={{ left: `${houseCenter}%`, transform: 'translateX(-50%)' }}
+        />
 
         {/* Existing plants */}
         {existingPlantsMap.map((p, i) => (
@@ -247,7 +265,11 @@ function StructuredAnalysisView({ data }: { data: StructuredAnalysis }) {
             <MapPin className="w-4 h-4 text-forest-600" />
             Yard Map
           </h3>
-          <YardMapView existingPlantsMap={data.existingPlantsMap || []} recommendations={data.recommendations || []} />
+          <YardMapView
+            existingPlantsMap={data.existingPlantsMap || []}
+            recommendations={data.recommendations || []}
+            house={data.house || { xStart: 25, xEnd: 75 }}
+          />
         </section>
       )}
       {data.recommendations?.length > 0 && (
@@ -353,7 +375,9 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function buildYardMapHtml(existingPlantsMap: ExistingPlantMapItem[], recommendations: PlantRecommendation[]): string {
+function buildYardMapHtml(existingPlantsMap: ExistingPlantMapItem[], recommendations: PlantRecommendation[], house: { xStart: number; xEnd: number }): string {
+  const houseXStart = house?.xStart ?? 25;
+  const houseXEnd = house?.xEnd ?? 75;
   const existingMarkers = (existingPlantsMap || []).map(p => `
     <div style="position:absolute; left:${p.x}%; top:${p.y}%; transform:translate(-50%,-50%); text-align:center;">
       <div style="width:22px; height:22px; border-radius:50%; background:#a8a29e; border:2px solid white; box-shadow:0 1px 3px rgba(0,0,0,.3); margin:0 auto; display:flex; align-items:center; justify-content:center; color:white; font-size:11px;">&#127794;</div>
@@ -376,8 +400,8 @@ function buildYardMapHtml(existingPlantsMap: ExistingPlantMapItem[], recommendat
   return `
     <div style="position:relative; width:100%; max-width:500px; aspect-ratio:4/3; background:linear-gradient(to bottom, #ecfccb, #bbf7d0); border:1px solid #e5e7eb; border-radius:16px; overflow:hidden; margin:0.5rem 0;">
       <div style="position:absolute; left:2%; right:2%; top:2%; bottom:2%; border:2px dashed rgba(20,83,45,.1); border-radius:8px;"></div>
-      <div style="position:absolute; left:22%; right:22%; top:0; height:17%; background:#d6d3d1; border-bottom:2px solid #a8a29e; box-shadow:0 1px 2px rgba(0,0,0,.1); display:flex; align-items:flex-end; justify-content:center; font-size:10px; font-weight:600; color:#57534e; padding-bottom:3px;">HOUSE</div>
-      <div style="position:absolute; left:50%; top:17%; bottom:0; width:7%; transform:translateX(-50%); background:#e7e5e4;"></div>
+      <div style="position:absolute; left:${houseXStart}%; width:${houseXEnd - houseXStart}%; top:0; height:17%; background:#d6d3d1; border-bottom:2px solid #a8a29e; box-shadow:0 1px 2px rgba(0,0,0,.1); display:flex; align-items:flex-end; justify-content:center; font-size:10px; font-weight:600; color:#57534e; padding-bottom:3px;">HOUSE</div>
+      <div style="position:absolute; left:${(houseXStart + houseXEnd) / 2}%; top:17%; bottom:0; width:7%; transform:translateX(-50%); background:#e7e5e4;"></div>
       ${existingMarkers}
       ${recMarkers}
       <div style="position:absolute; bottom:6px; left:50%; transform:translateX(-50%); font-size:9px; color:#78716c;">STREET / FRONT</div>
@@ -402,7 +426,7 @@ function buildReportHtml(opts: {
       bodyHtml += `<h2>Existing Plants Identified</h2><p>${escapeHtml(structured.currentPlants)}</p>`;
     }
     if (structured.existingPlantsMap?.length || structured.recommendations?.length) {
-      bodyHtml += `<h2>Yard Map</h2>${buildYardMapHtml(structured.existingPlantsMap, structured.recommendations)}`;
+      bodyHtml += `<h2>Yard Map</h2>${buildYardMapHtml(structured.existingPlantsMap, structured.recommendations, structured.house)}`;
     }
     if (structured.recommendations?.length) {
       bodyHtml += `<h2>Recommended Plants to Purchase</h2>`;
