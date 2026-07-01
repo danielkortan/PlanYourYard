@@ -21,7 +21,14 @@ function buildCatalogPromptList(): string {
     .join('\n');
 }
 
-function enrichRecommendation(rec: { plantId?: string; whyItWorks?: string; location?: string }): Record<string, any> | null {
+// Clamp a map coordinate to the 0-100 range, defaulting to the center if missing/invalid
+function clampCoord(n: any): number {
+  const num = typeof n === 'number' ? n : parseFloat(n);
+  if (!Number.isFinite(num)) return 50;
+  return Math.min(100, Math.max(0, num));
+}
+
+function enrichRecommendation(rec: { plantId?: string; whyItWorks?: string; location?: string; x?: number; y?: number }): Record<string, any> | null {
   if (!rec?.plantId) return null;
   const plant = recommendableCatalog.find(p => p.id === rec.plantId);
   if (!plant) return null;
@@ -43,6 +50,17 @@ function enrichRecommendation(rec: { plantId?: string; whyItWorks?: string; loca
     whenToBuy: PLANTING_SEASON_BY_TYPE[plant.type],
     howToPlant: PLANTING_INSTRUCTIONS_BY_TYPE[plant.type],
     care: plant.careTips,
+    x: clampCoord(rec.x),
+    y: clampCoord(rec.y),
+  };
+}
+
+function enrichExistingPlant(item: { label?: string; x?: number; y?: number }): Record<string, any> | null {
+  if (!item?.label) return null;
+  return {
+    label: item.label,
+    x: clampCoord(item.x),
+    y: clampCoord(item.y),
   };
 }
 
@@ -51,7 +69,10 @@ function enrichStructuredAnalysis(structured: Record<string, any> | null): Recor
   const recommendations = structured.recommendations
     .map((r: any) => enrichRecommendation(r))
     .filter((r: any): r is Record<string, any> => r !== null);
-  return { ...structured, recommendations };
+  const existingPlantsMap = Array.isArray(structured.existingPlantsMap)
+    ? structured.existingPlantsMap.map((i: any) => enrichExistingPlant(i)).filter((i: any): i is Record<string, any> => i !== null)
+    : [];
+  return { ...structured, recommendations, existingPlantsMap };
 }
 
 const getClient = () => {
@@ -107,17 +128,32 @@ router.post('/analyze', upload.single('image'), async (req: Request, res: Respon
 AVAILABLE NATIVE PLANTS — you must choose your 5 recommendations ONLY from this exact list, using the "id" value verbatim (do not invent plants or ids outside this list):
 ${buildCatalogPromptList()}
 
+You will also produce a simple top-down map of the property using this coordinate convention:
+- x ranges 0-100 (0 = left edge of the property, 100 = right edge)
+- y ranges 0-100 (0 = at the house/back of the property, 100 = at the street/front edge closest to the viewer)
+- The house occupies roughly x 25-75, y 0-15 (a band across the top of the map)
+- Place each existing item and each recommendation at the (x, y) that best matches where it actually is (or should go) in the photo relative to the house and walkway
+
 Respond with ONLY a single valid JSON object (no markdown code fences, no commentary before or after) matching exactly this shape:
 
 {
   "siteAssessment": "string - sun exposure (full sun/part shade/shade areas), existing vegetation, soil type indicators",
   "landscapeOpportunities": "string - best areas for new plantings and why",
   "currentPlants": "string - identification of any existing plants/trees visible",
+  "existingPlantsMap": [
+    {
+      "label": "string - short name for an existing plant/tree/shrub visible in the photo, e.g. 'Mature Oak Tree' or 'Overgrown Foundation Shrubs'",
+      "x": "number 0-100 per the coordinate convention above",
+      "y": "number 0-100 per the coordinate convention above"
+    }
+  ],
   "recommendations": [
     {
       "plantId": "string - must exactly match an id from the AVAILABLE NATIVE PLANTS list above",
       "whyItWorks": "string - why this specific plant suits this site's conditions",
-      "location": "string - exactly where on this property to place it"
+      "location": "string - exactly where on this property to place it",
+      "x": "number 0-100 per the coordinate convention above, matching the location description",
+      "y": "number 0-100 per the coordinate convention above, matching the location description"
     }
   ],
   "designConcept": {
@@ -127,11 +163,11 @@ Respond with ONLY a single valid JSON object (no markdown code fences, no commen
   }
 }
 
-Choose exactly 5 plants from the list above that best match this site's sun/shade, soil, and moisture conditions as seen in the photo. Be specific about "location" and "whyItWorks" — a homeowner should understand exactly why each plant was chosen and where to put it. Keep each field to 1-3 sentences so the full JSON object fits well within your response limit.`;
+Choose exactly 5 plants from the list above that best match this site's sun/shade, soil, and moisture conditions as seen in the photo. Include every distinct existing plant/tree/shrub you can identify in "existingPlantsMap" (it's fine to have anywhere from 1 to 6 items depending on what's visible). Be specific about "location" and "whyItWorks" — a homeowner should understand exactly why each plant was chosen and where to put it. Keep each field to 1-3 sentences so the full JSON object fits well within your response limit.`;
 
     const response = await client.messages.create({
       model: 'claude-opus-4-8',
-      max_tokens: plantName ? 2000 : 4096,
+      max_tokens: plantName ? 2000 : 4600,
       messages: [
         {
           role: 'user',
@@ -447,31 +483,45 @@ function generateDemoStructuredAnalysis(): Record<string, any> {
     siteAssessment: 'This demo response simulates a property with a mix of full sun near the front lawn and part-shade under mature trees toward the back. Soil appears to be typical clay-loam common to the Mid-Atlantic region, with decent drainage.',
     landscapeOpportunities: 'The foundation bed along the front of the house and the shaded area under the tree canopy are both underused and would benefit from layered native plantings instead of turf.',
     currentPlants: 'A mature shade tree and a row of overgrown sheared shrubs along the foundation are visible; no other ornamental plantings identified.',
+    existingPlantsMap: [
+      { label: 'Mature Shade Tree', x: 20, y: 45 },
+      { label: 'Overgrown Foundation Shrubs', x: 50, y: 17 },
+    ],
     recommendations: [
       {
         plantId: 'eastern-redbud',
         whyItWorks: 'Understory native that thrives in filtered light and adds spring color at a manageable scale for a front yard.',
         location: 'Offset to one side of the entry walkway for seasonal color without blocking the door.',
+        x: 38,
+        y: 25,
       },
       {
         plantId: 'oakleaf-hydrangea',
         whyItWorks: 'Shade-tolerant with four-season interest; makes an excellent foundation replacement for sheared non-native shrubs.',
         location: 'Foundation bed along the front of the house, spaced 4-5 feet apart.',
+        x: 62,
+        y: 18,
       },
       {
         plantId: 'christmas-fern',
         whyItWorks: 'Evergreen groundcover that handles dry shade under trees where grass struggles.',
         location: 'Underneath the mature shade tree canopy in the back yard.',
+        x: 22,
+        y: 52,
       },
       {
         plantId: 'foamflower',
         whyItWorks: 'Spreading shade groundcover with delicate spring flowers that fills bare mulch areas.',
         location: 'Along the shaded walkway border as a low edging groundcover.',
+        x: 45,
+        y: 35,
       },
       {
         plantId: 'virginia-sweetspire',
         whyItWorks: 'Handles moist soil, offers fragrant blooms and vivid red fall color.',
         location: 'Low-lying side yard area that collects moisture after rain.',
+        x: 80,
+        y: 55,
       },
     ],
     designConcept: {
