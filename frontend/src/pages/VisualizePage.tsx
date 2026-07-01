@@ -30,12 +30,21 @@ interface PlantRecommendation {
   howToPlant: string;
   care: string;
   location: string;
+  x: number;
+  y: number;
+}
+
+interface ExistingPlantMapItem {
+  label: string;
+  x: number;
+  y: number;
 }
 
 interface StructuredAnalysis {
   siteAssessment: string;
   landscapeOpportunities: string;
   currentPlants: string;
+  existingPlantsMap: ExistingPlantMapItem[];
   recommendations: PlantRecommendation[];
   designConcept: {
     title: string;
@@ -130,6 +139,59 @@ function MarkdownResult({ text }: { text: string }) {
   );
 }
 
+function YardMapView({ existingPlantsMap, recommendations }: { existingPlantsMap: ExistingPlantMapItem[]; recommendations: PlantRecommendation[] }) {
+  return (
+    <div>
+      <div className="relative w-full aspect-[4/3] bg-gradient-to-b from-green-50 to-green-100 rounded-xl border border-gray-200 overflow-hidden">
+        <div className="absolute left-[22%] right-[22%] top-0 h-[15%] bg-gray-300 border-b-2 border-gray-400 flex items-center justify-center">
+          <span className="text-[11px] font-semibold text-gray-600 tracking-wide">HOUSE</span>
+        </div>
+        <div className="absolute left-1/2 -translate-x-1/2 top-[15%] bottom-0 w-[6%] bg-gray-200/70" />
+        {existingPlantsMap.map((p, i) => (
+          <div
+            key={`existing-${i}`}
+            className="absolute -translate-x-1/2 -translate-y-1/2 group"
+            style={{ left: `${p.x}%`, top: `${p.y}%` }}
+          >
+            <div className="w-3.5 h-3.5 rounded-full bg-gray-500 border-2 border-white shadow" />
+            <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 whitespace-nowrap text-[10px] bg-white border border-gray-200 rounded px-1.5 py-0.5 shadow opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+              {p.label}
+            </div>
+          </div>
+        ))}
+        {recommendations.map((r, i) => (
+          <div
+            key={`rec-${i}`}
+            className="absolute -translate-x-1/2 -translate-y-1/2 group"
+            style={{ left: `${r.x}%`, top: `${r.y}%` }}
+          >
+            <div className="w-6 h-6 rounded-full bg-forest-600 text-white text-[11px] font-bold flex items-center justify-center border-2 border-white shadow-md">
+              {i + 1}
+            </div>
+            <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 whitespace-nowrap text-[10px] bg-white border border-gray-200 rounded px-1.5 py-0.5 shadow opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+              {r.commonName}
+            </div>
+          </div>
+        ))}
+        <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 text-[10px] text-gray-400 tracking-wide">
+          STREET / FRONT
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-2 text-xs text-gray-600">
+        <span className="flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-full bg-gray-500 inline-block border-2 border-white shadow" />
+          Existing
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-4 h-4 rounded-full bg-forest-600 inline-flex items-center justify-center text-white text-[9px] font-bold border-2 border-white shadow">1</span>
+          Recommended (numbered to match list below)
+        </span>
+      </div>
+      <p className="text-[11px] text-gray-400 mt-1">Approximate layout based on the AI's interpretation of the photo — not to scale or surveyed.</p>
+    </div>
+  );
+}
+
 function StructuredAnalysisView({ data }: { data: StructuredAnalysis }) {
   return (
     <div className="space-y-6">
@@ -147,6 +209,15 @@ function StructuredAnalysisView({ data }: { data: StructuredAnalysis }) {
           <p className="text-sm text-gray-700 leading-relaxed">{data.currentPlants}</p>
         </section>
       )}
+      {(data.existingPlantsMap?.length > 0 || data.recommendations?.length > 0) && (
+        <section>
+          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-1.5">
+            <MapPin className="w-4 h-4 text-forest-600" />
+            Yard Map
+          </h3>
+          <YardMapView existingPlantsMap={data.existingPlantsMap || []} recommendations={data.recommendations || []} />
+        </section>
+      )}
       {data.recommendations?.length > 0 && (
         <section>
           <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-1.5">
@@ -155,7 +226,10 @@ function StructuredAnalysisView({ data }: { data: StructuredAnalysis }) {
           </h3>
           <div className="grid sm:grid-cols-2 gap-3">
             {data.recommendations.map((r, i) => (
-              <div key={i} className="border border-gray-200 rounded-xl overflow-hidden bg-white">
+              <div key={i} className="relative border border-gray-200 rounded-xl overflow-hidden bg-white">
+                <div className="absolute top-2 left-2 w-6 h-6 rounded-full bg-forest-600 text-white text-xs font-bold flex items-center justify-center border-2 border-white shadow-md z-10">
+                  {i + 1}
+                </div>
                 <PlantImage plantId={r.plantId} commonName={r.commonName} className="w-full h-32 object-cover" />
                 <div className="p-3">
                   <div className="flex items-start justify-between gap-2 mb-1">
@@ -247,6 +321,28 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+function buildYardMapHtml(existingPlantsMap: ExistingPlantMapItem[], recommendations: PlantRecommendation[]): string {
+  const existingMarkers = (existingPlantsMap || []).map(p => `
+    <div style="position:absolute; left:${p.x}%; top:${p.y}%; transform:translate(-50%,-50%); text-align:center;">
+      <div style="width:12px; height:12px; border-radius:50%; background:#6b7280; border:2px solid white; box-shadow:0 1px 3px rgba(0,0,0,.3); margin:0 auto;"></div>
+      <div style="font-size:9px; color:#4b5563; white-space:nowrap; margin-top:2px;">${escapeHtml(p.label)}</div>
+    </div>`).join('');
+  const recMarkers = (recommendations || []).map((r, i) => `
+    <div style="position:absolute; left:${r.x}%; top:${r.y}%; transform:translate(-50%,-50%); text-align:center;">
+      <div style="width:22px; height:22px; border-radius:50%; background:#15803d; color:white; font-size:11px; font-weight:bold; display:flex; align-items:center; justify-content:center; border:2px solid white; box-shadow:0 1px 3px rgba(0,0,0,.3); margin:0 auto;">${i + 1}</div>
+      <div style="font-size:9px; color:#166534; white-space:nowrap; margin-top:2px;">${escapeHtml(r.commonName)}</div>
+    </div>`).join('');
+  return `
+    <div style="position:relative; width:100%; max-width:500px; aspect-ratio:4/3; background:linear-gradient(to bottom, #f0fdf4, #dcfce7); border:1px solid #e5e7eb; border-radius:12px; overflow:hidden; margin:0.5rem 0;">
+      <div style="position:absolute; left:22%; right:22%; top:0; height:15%; background:#d1d5db; border-bottom:2px solid #9ca3af; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600; color:#4b5563;">HOUSE</div>
+      <div style="position:absolute; left:50%; top:15%; bottom:0; width:6%; transform:translateX(-50%); background:rgba(229,231,235,.7);"></div>
+      ${existingMarkers}
+      ${recMarkers}
+      <div style="position:absolute; bottom:6px; left:50%; transform:translateX(-50%); font-size:9px; color:#9ca3af;">STREET / FRONT</div>
+    </div>
+    <p style="font-size:11px; color:#9ca3af; margin-top:0;">Approximate layout based on the AI's interpretation of the photo &mdash; not to scale or surveyed.</p>`;
+}
+
 function buildReportHtml(opts: {
   title: string;
   imageDataUrl?: string | null;
@@ -262,6 +358,9 @@ function buildReportHtml(opts: {
     bodyHtml += `<h2>Landscape Opportunities</h2><p>${escapeHtml(structured.landscapeOpportunities)}</p>`;
     if (structured.currentPlants) {
       bodyHtml += `<h2>Existing Plants Identified</h2><p>${escapeHtml(structured.currentPlants)}</p>`;
+    }
+    if (structured.existingPlantsMap?.length || structured.recommendations?.length) {
+      bodyHtml += `<h2>Yard Map</h2>${buildYardMapHtml(structured.existingPlantsMap, structured.recommendations)}`;
     }
     if (structured.recommendations?.length) {
       bodyHtml += `<h2>Recommended Plants to Purchase</h2>`;
