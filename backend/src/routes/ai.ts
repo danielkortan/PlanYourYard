@@ -69,11 +69,11 @@ Respond with ONLY a single valid JSON object (no markdown code fences, no commen
   }
 }
 
-Provide exactly 5 native plant recommendations suited to this location and the visible site conditions. Be specific and practical enough that a homeowner could use "recommendations" as a shopping and planting checklist.`;
+Provide exactly 5 native plant recommendations suited to this location and the visible site conditions. Be specific and practical enough that a homeowner could use "recommendations" as a shopping and planting checklist. Keep each field to 1-3 sentences so the full JSON object fits well within your response limit — completeness and valid JSON matter more than exhaustive detail.`;
 
     const response = await client.messages.create({
       model: 'claude-opus-4-8',
-      max_tokens: 2000,
+      max_tokens: plantName ? 2000 : 4096,
       messages: [
         {
           role: 'user',
@@ -97,9 +97,13 @@ Provide exactly 5 native plant recommendations suited to this location and the v
 
     const textContent = response.content.find(c => c.type === 'text');
     const rawText = textContent?.type === 'text' ? textContent.text : '';
+    const structured = plantName ? null : parseStructuredAnalysis(rawText);
+    if (!plantName && !structured) {
+      console.warn('AI analyze: failed to parse structured JSON', { stopReason: response.stop_reason, length: rawText.length });
+    }
     res.json({
       analysis: rawText,
-      structured: plantName ? null : parseStructuredAnalysis(rawText),
+      structured,
       usage: response.usage,
     });
   } catch (error: any) {
@@ -118,9 +122,10 @@ Provide exactly 5 native plant recommendations suited to this location and the v
 
 // Attempt to parse the yard-analysis JSON payload out of the model's text response
 function parseStructuredAnalysis(text: string): Record<string, any> | null {
+  const stripped = text.replace(/```json/gi, '').replace(/```/g, '');
+  const match = stripped.match(/\{[\s\S]*\}/);
+  if (!match) return null;
   try {
-    const match = text.match(/\{[\s\S]*\}/);
-    if (!match) return null;
     return JSON.parse(match[0]);
   } catch {
     return null;
