@@ -2,11 +2,11 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import db from '../database/db';
-import { requireAuth, AuthRequest } from '../middleware/auth';
+import { requireAuth, AuthRequest, getJwtSecret } from '../middleware/auth';
 
 const router = Router();
 
-const getSecret = () => process.env.JWT_SECRET || 'changeme-set-JWT_SECRET-in-env';
+const getSecret = getJwtSecret;
 
 // POST /api/auth/register
 router.post('/register', (req: Request, res: Response) => {

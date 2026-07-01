@@ -2,8 +2,10 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { ReactNode } from 'react';
 import Header from './components/Header';
+import HomePage from './pages/HomePage';
 import PlantsPage from './pages/PlantsPage';
 import VisualizePage from './pages/VisualizePage';
+import PlannerPage from './pages/PlannerPage';
 import LoginPage from './pages/LoginPage';
 import ProjectsPage from './pages/ProjectsPage';
 import AdminPage from './pages/AdminPage';
@@ -24,14 +26,15 @@ function AppRoutes() {
       <Header />
       <main className="flex-1">
         <Routes>
-          <Route path="/" element={<Navigate to="/designer" replace />} />
+          <Route path="/" element={<HomePage />} />
           <Route path="/designer" element={<YardDesignerPage />} />
+          <Route path="/planner" element={<PlannerPage />} />
           <Route path="/plants" element={<PlantsPage />} />
-          <Route path="/visualize" element={<VisualizePage />} />
+          <Route path="/visualize" element={<ProtectedRoute><VisualizePage /></ProtectedRoute>} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/projects" element={<ProtectedRoute><ProjectsPage /></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute adminOnly><AdminPage /></ProtectedRoute>} />
-          <Route path="*" element={<Navigate to="/designer" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
       <Toaster

@@ -5,7 +5,14 @@ export interface AuthRequest extends Request {
   user?: { id: number; email: string; role: string };
 }
 
-const getSecret = () => process.env.JWT_SECRET || 'changeme-set-JWT_SECRET-in-env';
+export const getJwtSecret = () => {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET must be set in production — refusing to use an insecure fallback secret.');
+  }
+  return 'changeme-set-JWT_SECRET-in-env';
+};
+const getSecret = getJwtSecret;
 
 export function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   const token = req.headers.authorization?.replace('Bearer ', '');

@@ -21,15 +21,31 @@ const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 
 // GET /api/projects
 router.get('/', requireAuth, (req: AuthRequest, res: Response) => {
-  const projects = db.prepare(`
+  const { q, page = '1', limit = '20' } = req.query as Record<string, string>;
+
+  const search = q?.trim();
+  const where = search ? 'AND (p.name LIKE ? OR p.address LIKE ?)' : '';
+  const searchParams = search ? [`%${search}%`, `%${search}%`] : [];
+
+  const total = (db.prepare(`
+    SELECT COUNT(*) as count FROM projects p WHERE p.user_id = ? ${where}
+  `).get(req.user!.id, ...searchParams) as any).count;
+
+  const pageNum = Math.max(1, parseInt(page) || 1);
+  const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20));
+  const offset = (pageNum - 1) * limitNum;
+
+  const results = db.prepare(`
     SELECT p.*, COUNT(pi.id) as image_count
     FROM projects p
     LEFT JOIN project_images pi ON pi.project_id = p.id
-    WHERE p.user_id = ?
+    WHERE p.user_id = ? ${where}
     GROUP BY p.id
     ORDER BY p.created_at DESC
-  `).all(req.user!.id);
-  res.json(projects);
+    LIMIT ? OFFSET ?
+  `).all(req.user!.id, ...searchParams, limitNum, offset);
+
+  res.json({ total, page: pageNum, limit: limitNum, results });
 });
 
 // POST /api/projects

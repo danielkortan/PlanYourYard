@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Folder, MapPin, Image, Trash2, Calendar, X, Satellite, Navigation, Eye } from 'lucide-react';
+import { Plus, Folder, MapPin, Image, Trash2, Calendar, X, Satellite, Navigation, Eye, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -72,6 +72,12 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const PAGE_SIZE = 12;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   // New project form state
   const [form, setForm] = useState({ name: '', address: '', description: '' });
@@ -86,12 +92,24 @@ export default function ProjectsPage() {
   const addressRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Debounce free-text search before it drives the page-1 refetch below
   useEffect(() => {
-    axios.get('/api/projects')
-      .then(res => setProjects(res.data))
+    const t = setTimeout(() => { setSearch(searchInput.trim()); setPage(1); }, 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const fetchProjects = () => {
+    setLoading(true);
+    return axios.get('/api/projects', { params: { q: search || undefined, page, limit: PAGE_SIZE } })
+      .then(res => { setProjects(res.data.results); setTotal(res.data.total); })
       .catch(() => toast.error('Failed to load projects'))
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => {
+    fetchProjects();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, page]);
 
   // Real-time address search with debounce
   useEffect(() => {
@@ -158,7 +176,6 @@ export default function ProjectsPage() {
         lng: pickedLng,
         zoom: pickedZoom,
       });
-      setProjects(prev => [{ ...res.data, image_count: 0 }, ...prev]);
       resetForm();
       setShowForm(false);
       toast.success('Project created! Now draw your property border.');
@@ -176,8 +193,12 @@ export default function ProjectsPage() {
     if (!confirm('Delete this project and all its images?')) return;
     try {
       await axios.delete(`/api/projects/${id}`);
-      setProjects(prev => prev.filter(p => p.id !== id));
       toast.success('Project deleted');
+      if (projects.length === 1 && page > 1) {
+        setPage(p => p - 1); // deleted the last item on this page — fall back a page
+      } else {
+        fetchProjects();
+      }
     } catch {
       toast.error('Failed to delete project');
     }
@@ -198,6 +219,20 @@ export default function ProjectsPage() {
           <Plus className="w-4 h-4" /> New Project
         </button>
       </div>
+
+      {/* Search */}
+      {(total > 0 || search) && (
+        <div className="relative mb-6 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
+            placeholder="Search by name or address…"
+            className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-500 text-sm"
+          />
+        </div>
+      )}
 
       {/* Create Project Modal */}
       {showForm && (
@@ -364,6 +399,12 @@ export default function ProjectsPage() {
       {/* Projects Grid */}
       {loading ? (
         <div className="flex items-center justify-center py-20 text-gray-400">Loading projects…</div>
+      ) : projects.length === 0 && search ? (
+        <div className="text-center py-20">
+          <Search className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-600 mb-2">No projects match "{search}"</h3>
+          <p className="text-gray-400">Try a different name or address.</p>
+        </div>
       ) : projects.length === 0 ? (
         <div className="text-center py-20">
           <Folder className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -444,6 +485,31 @@ export default function ProjectsPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {!loading && total > PAGE_SIZE && (
+        <div className="flex items-center justify-center gap-3 mt-8">
+          <button
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            aria-label="Previous page"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <span className="text-sm text-gray-500">
+            Page {page} of {totalPages} · {total} project{total === 1 ? '' : 's'}
+          </span>
+          <button
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+            className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            aria-label="Next page"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
         </div>
       )}
     </div>
