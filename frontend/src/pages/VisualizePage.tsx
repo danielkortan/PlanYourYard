@@ -260,7 +260,7 @@ function useDebouncedPlantSearch() {
     timeoutRef.current = setTimeout(async () => {
       try {
         const res = await axios.get('/api/plants/search', { params: { q: val, limit: 6 } });
-        setResults(res.data.results);
+        setResults(res.data.results || []);
       } catch { /* ignore */ }
     }, 300);
   };
@@ -424,7 +424,12 @@ function YardMapView({
 
   const layout = useMemo(() => computeLabelLayout(allMarkers), [allMarkers]);
 
-  const closeAll = () => { setPinnedKey(null); setHoverKey(null); setEditingKey(null); };
+  const closeAll = () => {
+    // Don't let a stray click on the map background silently discard an in-progress correction.
+    if (editingKey) return;
+    setPinnedKey(null);
+    setHoverKey(null);
+  };
   const markerHoverHandlers = (key: string) => ({
     onMouseEnter: () => setHoverKey(key),
     onMouseLeave: () => setHoverKey(h => (h === key ? null : h)),
@@ -454,7 +459,15 @@ function YardMapView({
           onCancelEdit={() => setEditingKey(null)}
           onRename={newLabel => {
             if (kind === 'existing' && existingIndex !== undefined) {
-              onUpdateExisting(existingIndex, { label: newLabel, corrected: true });
+              // A freeform rename decouples the marker from whatever species it was
+              // previously linked to, so drop the stale plantId/scientificName —
+              // otherwise the marker would show the old plant's photo under the new name.
+              onUpdateExisting(existingIndex, {
+                label: newLabel,
+                corrected: true,
+                plantId: undefined,
+                scientificName: undefined,
+              });
             }
             setEditingKey(null);
           }}
@@ -467,6 +480,9 @@ function YardMapView({
                 corrected: true,
               });
             } else if (kind === 'rec' && recIndex !== undefined) {
+              // whyItWorks/whenToBuy/howToPlant/care were AI-authored narrative text
+              // about the *previous* plant — clear them so the card doesn't describe
+              // a species it no longer shows.
               onUpdateRecommendation(recIndex, {
                 plantId: plant.id,
                 commonName: plant.commonName,
@@ -480,6 +496,10 @@ function YardMapView({
                 bloomTime: plant.bloomTime,
                 bloomColor: plant.bloomColor,
                 wildlifeValue: plant.wildlifeValue,
+                whyItWorks: 'Swapped in by you to replace the AI\'s original suggestion.',
+                whenToBuy: 'Best planted in spring or fall while dormant.',
+                howToPlant: plant.careTips || 'Follow standard planting depth and spacing for this species.',
+                care: plant.careTips || '',
               });
             }
             setEditingKey(null);
