@@ -7,14 +7,24 @@ import {
   Upload, Eye, TreePine, X, RefreshCw,
   Sparkles, Info, Search, ArrowRight,
   Leaf, Camera, Plus, Folder, MapPin,
-  Maximize2, Download,
+  Maximize2, Download, Sun,
 } from 'lucide-react';
 import { Plant } from '../types';
+import PlantImage from '../components/PlantImage';
 
 interface PlantRecommendation {
+  plantId: string;
   commonName: string;
   scientificName: string;
   type: string;
+  height: { min: number; max: number };
+  spread: { min: number; max: number };
+  sunRequirements: string[];
+  soilType: string[];
+  waterRequirements: string;
+  bloomTime: string[];
+  bloomColor: string[];
+  wildlifeValue: { pollinators: boolean; birds: boolean; butterflies: boolean; deer: string; mammals: boolean };
   whyItWorks: string;
   whenToBuy: string;
   howToPlant: string;
@@ -54,6 +64,28 @@ const GROWTH_STAGES = [
   { value: '5year', label: '5 Years', desc: 'Maturing' },
   { value: '10year', label: '10 Years', desc: 'Well established' },
   { value: 'mature', label: 'Mature', desc: 'Full size' },
+];
+
+const YARD_STYLES = [
+  { label: 'Woodland / Naturalized', desc: 'Layered native trees & shade groundcovers' },
+  { label: 'Pollinator Garden', desc: 'Nectar & host plants for bees and butterflies' },
+  { label: 'Wildlife Habitat', desc: 'Berries, cover & food for birds and wildlife' },
+  { label: 'Fruit / Vegetable', desc: 'Space for food growing alongside native plantings' },
+  { label: 'Low Maintenance', desc: 'Minimal upkeep, drought tolerant' },
+  { label: 'Formal / Manicured', desc: 'Clean lines, structured plantings' },
+  { label: 'Cottage Garden', desc: 'Informal, colorful, densely planted' },
+  { label: 'Privacy Screening', desc: 'Dense screening from view or noise' },
+];
+
+const TWEAK_OPTIONS = [
+  'More trees',
+  'More shrubs',
+  'More shade-tolerant plants',
+  'More sun-loving plants',
+  'More pollinator-friendly plants',
+  'Lower maintenance options',
+  'More color / blooms',
+  'Fewer, simpler recommendations',
 ];
 
 function MarkdownResult({ text }: { text: string }) {
@@ -123,21 +155,44 @@ function StructuredAnalysisView({ data }: { data: StructuredAnalysis }) {
           </h3>
           <div className="grid sm:grid-cols-2 gap-3">
             {data.recommendations.map((r, i) => (
-              <div key={i} className="border border-gray-200 rounded-xl p-3 bg-white">
-                <div className="flex items-start justify-between gap-2 mb-1">
-                  <div>
-                    <p className="font-semibold text-gray-900 text-sm">{r.commonName}</p>
-                    <p className="text-xs text-gray-500 italic">{r.scientificName}</p>
+              <div key={i} className="border border-gray-200 rounded-xl overflow-hidden bg-white">
+                <PlantImage plantId={r.plantId} commonName={r.commonName} className="w-full h-32 object-cover" />
+                <div className="p-3">
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <div>
+                      <p className="font-semibold text-gray-900 text-sm">{r.commonName}</p>
+                      <p className="text-xs text-gray-500 italic">{r.scientificName}</p>
+                    </div>
+                    <span className="text-xs bg-forest-100 text-forest-700 px-2 py-0.5 rounded-full shrink-0">{r.type}</span>
                   </div>
-                  <span className="text-xs bg-forest-100 text-forest-700 px-2 py-0.5 rounded-full shrink-0">{r.type}</span>
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    <span className="text-[11px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                      {r.height.min}-{r.height.max} ft tall
+                    </span>
+                    <span className="text-[11px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                      {r.spread.min}-{r.spread.max} ft wide
+                    </span>
+                    <span className="text-[11px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+                      {r.sunRequirements.join(' / ')}
+                    </span>
+                    <span className="text-[11px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
+                      {r.waterRequirements} water
+                    </span>
+                    {r.wildlifeValue?.pollinators && (
+                      <span className="text-[11px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">pollinators</span>
+                    )}
+                    {r.wildlifeValue?.birds && (
+                      <span className="text-[11px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">birds</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-600 mb-2">{r.whyItWorks}</p>
+                  <ul className="text-xs text-gray-700 space-y-1">
+                    <li><span className="font-medium text-gray-900">Buy/plant timing: </span>{r.whenToBuy}</li>
+                    <li><span className="font-medium text-gray-900">How to plant: </span>{r.howToPlant}</li>
+                    <li><span className="font-medium text-gray-900">Care: </span>{r.care}</li>
+                    <li><span className="font-medium text-gray-900">Location: </span>{r.location}</li>
+                  </ul>
                 </div>
-                <p className="text-xs text-gray-600 mb-2">{r.whyItWorks}</p>
-                <ul className="text-xs text-gray-700 space-y-1">
-                  <li><span className="font-medium text-gray-900">Buy/plant timing: </span>{r.whenToBuy}</li>
-                  <li><span className="font-medium text-gray-900">How to plant: </span>{r.howToPlant}</li>
-                  <li><span className="font-medium text-gray-900">Care: </span>{r.care}</li>
-                  <li><span className="font-medium text-gray-900">Location: </span>{r.location}</li>
-                </ul>
               </div>
             ))}
           </div>
@@ -214,6 +269,7 @@ function buildReportHtml(opts: {
         bodyHtml += `
           <div class="plant">
             <h3>${escapeHtml(r.commonName)} <em>(${escapeHtml(r.scientificName)})</em> &mdash; ${escapeHtml(r.type)}</h3>
+            <p>${r.height.min}-${r.height.max} ft tall &middot; ${r.spread.min}-${r.spread.max} ft wide &middot; ${escapeHtml(r.sunRequirements.join(' / '))} &middot; ${escapeHtml(r.waterRequirements)} water</p>
             <p>${escapeHtml(r.whyItWorks)}</p>
             <ul>
               <li><strong>Buy/plant timing:</strong> ${escapeHtml(r.whenToBuy)}</li>
@@ -265,9 +321,16 @@ export default function VisualizePage() {
   const [showPlantSearch, setShowPlantSearch] = useState(!preselectedPlant);
   const [growthStage, setGrowthStage] = useState('5year');
   const [location2, setLocation2] = useState(projectAddress || '');
+  const [locationMode, setLocationMode] = useState<'general' | 'address'>('general');
+  const [geocoding, setGeocoding] = useState(false);
+  const [sunExposure, setSunExposure] = useState<{ classification: string; hoursOfSun: number; label: string } | null>(null);
   const [mode, setMode] = useState<'analyze' | 'visualize' | 'landscape'>(
     projectId ? 'landscape' : 'analyze'
   );
+  const [yardStyles, setYardStyles] = useState<string[]>([]);
+  const [showTweaks, setShowTweaks] = useState(false);
+  const [selectedTweaks, setSelectedTweaks] = useState<string[]>([]);
+  const [customTweak, setCustomTweak] = useState('');
 
   // Project context
   const [existingPlants, setExistingPlants] = useState<AerialMarker[]>([]);
@@ -365,7 +428,43 @@ export default function VisualizePage() {
     setFuturePlants(prev => prev.filter(p => p.id !== id));
   };
 
-  const runAnalysis = async () => {
+  const toggleYardStyle = (label: string) => {
+    setYardStyles(prev => prev.includes(label) ? prev.filter(v => v !== label) : [...prev, label]);
+  };
+
+  const toggleTweak = (label: string) => {
+    setSelectedTweaks(prev => prev.includes(label) ? prev.filter(v => v !== label) : [...prev, label]);
+  };
+
+  const lookupSunExposure = async () => {
+    if (!location2.trim()) {
+      toast.error('Enter an address first');
+      return;
+    }
+    setGeocoding(true);
+    setSunExposure(null);
+    try {
+      const geo = await axios.get('https://nominatim.openstreetmap.org/search', {
+        params: { q: location2, format: 'json', limit: 1 },
+        headers: { 'Accept-Language': 'en-US' },
+      });
+      if (!geo.data || geo.data.length === 0) {
+        toast.error('Could not find that address');
+        return;
+      }
+      const { lat, lon, display_name } = geo.data[0];
+      const sun = await axios.get('/api/sunpath/calculate', { params: { lat, lng: lon } });
+      const { classification, hoursOfSun } = sun.data.sunExposure;
+      setSunExposure({ classification, hoursOfSun, label: display_name });
+      toast.success('Sun exposure calculated from address!');
+    } catch {
+      toast.error('Could not calculate sun exposure for that address');
+    } finally {
+      setGeocoding(false);
+    }
+  };
+
+  const runAnalysis = async (adjustments?: string) => {
     setLoading(true);
     setResult(null);
     setStructured(null);
@@ -438,6 +537,16 @@ export default function VisualizePage() {
         formData.append('spread', selectedPlant.spread.max.toString());
       }
       if (location2) formData.append('location', location2);
+      if (locationMode === 'address' && sunExposure) {
+        formData.append('sunClassification', sunExposure.classification);
+        formData.append('sunHoursOfSun', String(sunExposure.hoursOfSun));
+      }
+      if (mode === 'analyze' && yardStyles.length > 0) {
+        formData.append('yardStyles', yardStyles.join(', '));
+      }
+      if (mode === 'analyze' && adjustments) {
+        formData.append('adjustments', adjustments);
+      }
       if (mode === 'visualize') formData.append('growthStage', growthStage);
 
       const endpoint = mode === 'analyze' ? '/api/ai/analyze' : '/api/ai/visualize';
@@ -466,6 +575,16 @@ export default function VisualizePage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const refineAnalysis = () => {
+    const parts = [...selectedTweaks];
+    if (customTweak.trim()) parts.push(customTweak.trim());
+    if (parts.length === 0) {
+      toast.error('Select or type at least one adjustment');
+      return;
+    }
+    runAnalysis(parts.join('; '));
   };
 
   const analyzeButtonLabel = () => {
@@ -663,22 +782,96 @@ export default function VisualizePage() {
 
         {/* Property Location */}
         <div className="card p-4">
-          <label className="label">
-            Property Location <span className="text-gray-400 font-normal">(optional)</span>
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="label mb-0">
+              Property Location <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <div className="flex gap-1 text-xs shrink-0">
+              <button
+                onClick={() => { setLocationMode('general'); setSunExposure(null); }}
+                className={`px-2 py-1 rounded-full transition-colors ${
+                  locationMode === 'general' ? 'bg-forest-100 text-forest-700 font-medium' : 'text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                General area
+              </button>
+              <button
+                onClick={() => setLocationMode('address')}
+                className={`px-2 py-1 rounded-full transition-colors ${
+                  locationMode === 'address' ? 'bg-forest-100 text-forest-700 font-medium' : 'text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                Specific address
+              </button>
+            </div>
+          </div>
           <div className="relative">
             <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
               value={location2}
-              onChange={e => setLocation2(e.target.value)}
-              placeholder="e.g., Northern Virginia, Zone 7"
+              onChange={e => { setLocation2(e.target.value); setSunExposure(null); }}
+              placeholder={locationMode === 'address' ? '123 Main St, Arlington, VA 22201' : 'e.g., Northern Virginia, Zone 7'}
               className="input pl-10 text-sm"
             />
           </div>
-          <p className="text-xs text-gray-400 mt-1">Helps AI tailor recommendations to your climate</p>
+          {locationMode === 'address' ? (
+            <div className="mt-2">
+              <button
+                onClick={lookupSunExposure}
+                disabled={geocoding || !location2.trim()}
+                className="btn-outline text-xs w-full justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {geocoding ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sun className="w-3.5 h-3.5" />}
+                {geocoding ? 'Calculating sun exposure...' : 'Calculate Sun Exposure'}
+              </button>
+              {sunExposure && (
+                <div className="mt-2 text-xs bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 text-amber-800 flex items-start gap-1.5">
+                  <Sun className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <p className="font-medium">
+                      {sunExposure.classification === 'full-sun' ? 'Full Sun' : sunExposure.classification === 'part-shade' ? 'Part Shade' : 'Full Shade'}
+                      {' '}· ~{sunExposure.hoursOfSun} hrs direct sun today
+                    </p>
+                    <p className="text-amber-600 truncate">{sunExposure.label}</p>
+                  </div>
+                </div>
+              )}
+              <p className="text-xs text-gray-400 mt-1">Measures actual solar exposure so AI won't misjudge sun/shade from the photo alone</p>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400 mt-1">Helps AI tailor recommendations to your climate</p>
+          )}
         </div>
       </div>
+
+      {/* Yard Style (Yard Analysis mode only) */}
+      {mode === 'analyze' && (
+        <div className="card p-4 mb-5">
+          <h2 className="font-semibold text-gray-900 mb-1">
+            Yard Style <span className="text-gray-400 font-normal text-sm">(optional, select any that apply)</span>
+          </h2>
+          <p className="text-xs text-gray-400 mb-3">
+            Tell the AI what kind of yard you're going for — it'll prioritize recommendations and the design concept accordingly.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {YARD_STYLES.map(s => (
+              <button
+                key={s.label}
+                onClick={() => toggleYardStyle(s.label)}
+                title={s.desc}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium border-2 transition-colors ${
+                  yardStyles.includes(s.label)
+                    ? 'border-forest-500 bg-forest-50 text-forest-700'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="space-y-5 mb-5">
         {/* Landscape mode: existing + future plants */}
@@ -857,7 +1050,7 @@ export default function VisualizePage() {
 
         {/* Analyze button */}
         <button
-          onClick={runAnalysis}
+          onClick={() => runAnalysis()}
           disabled={analyzeButtonDisabled}
           className="w-full bg-gradient-to-r from-forest-600 to-forest-700 hover:from-forest-700 hover:to-forest-800 disabled:from-gray-300 disabled:to-gray-300 text-white font-semibold px-6 py-4 rounded-xl flex items-center justify-center gap-3 transition-all shadow-sm disabled:cursor-not-allowed"
         >
@@ -945,11 +1138,11 @@ export default function VisualizePage() {
           )}
 
           <div className="bg-gray-50 rounded-xl p-4">
-            <ResultBody mode={mode} result={result} structured={structured} onRetry={runAnalysis} />
+            <ResultBody mode={mode} result={result} structured={structured} onRetry={() => runAnalysis()} />
           </div>
 
           <div className="flex gap-3 mt-4 pt-4 border-t border-gray-100">
-            <button onClick={runAnalysis} className="btn-outline text-sm">
+            <button onClick={() => runAnalysis()} className="btn-outline text-sm">
               <RefreshCw className="w-4 h-4" />
               Re-analyze
             </button>
@@ -966,6 +1159,52 @@ export default function VisualizePage() {
               </button>
             )}
           </div>
+
+          {mode === 'analyze' && (
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <button
+                onClick={() => setShowTweaks(v => !v)}
+                className="text-sm text-forest-600 hover:text-forest-800 flex items-center gap-1.5 font-medium"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Not quite right? Tweak & re-analyze
+              </button>
+              {showTweaks && (
+                <div className="mt-3 space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    {TWEAK_OPTIONS.map(opt => (
+                      <button
+                        key={opt}
+                        onClick={() => toggleTweak(opt)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium border-2 transition-colors ${
+                          selectedTweaks.includes(opt)
+                            ? 'border-forest-500 bg-forest-50 text-forest-700'
+                            : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                        }`}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    type="text"
+                    value={customTweak}
+                    onChange={e => setCustomTweak(e.target.value)}
+                    placeholder="Or describe your own adjustment…"
+                    className="input text-sm"
+                  />
+                  <button
+                    onClick={refineAnalysis}
+                    disabled={loading || (selectedTweaks.length === 0 && !customTweak.trim())}
+                    className="btn-outline text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Apply & Re-analyze
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div className="card p-8 text-center flex flex-col items-center justify-center min-h-[400px]">
@@ -1066,7 +1305,7 @@ export default function VisualizePage() {
             )}
 
             <div className="bg-gray-50 rounded-xl p-6">
-              <ResultBody mode={mode} result={result} structured={structured} onRetry={runAnalysis} />
+              <ResultBody mode={mode} result={result} structured={structured} onRetry={() => runAnalysis()} />
             </div>
           </div>
         </div>

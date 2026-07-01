@@ -1,10 +1,58 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import Anthropic from '@anthropic-ai/sdk';
-import { AIAnalyzeRequest } from '../types';
+import { AIAnalyzeRequest, NativePlant } from '../types';
+import { nativePlantsData } from '../data/nativePlants';
+import { PLANTING_SEASON_BY_TYPE, PLANTING_INSTRUCTIONS_BY_TYPE } from '../data/plantingGuidance';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+
+// Plants actually native to the app's Mid-Atlantic / Virginia focus area — the
+// only plants the AI is allowed to recommend, so every recommendation resolves
+// to a full, real database record instead of an AI-invented one.
+const recommendableCatalog = nativePlantsData.filter(
+  p => p.nativeRange.includes('Virginia') && p.nativeRange.includes('Mid-Atlantic')
+);
+
+function buildCatalogPromptList(): string {
+  return recommendableCatalog
+    .map(p => `- id: "${p.id}" — ${p.commonName} (${p.scientificName}) | ${p.type} | sun: ${p.sunRequirements.join('/')} | height ${p.height.min}-${p.height.max}ft | soil: ${p.soilType.join('/')} | water: ${p.waterRequirements}`)
+    .join('\n');
+}
+
+function enrichRecommendation(rec: { plantId?: string; whyItWorks?: string; location?: string }): Record<string, any> | null {
+  if (!rec?.plantId) return null;
+  const plant = recommendableCatalog.find(p => p.id === rec.plantId);
+  if (!plant) return null;
+  return {
+    plantId: plant.id,
+    commonName: plant.commonName,
+    scientificName: plant.scientificName,
+    type: plant.type,
+    height: plant.height,
+    spread: plant.spread,
+    sunRequirements: plant.sunRequirements,
+    soilType: plant.soilType,
+    waterRequirements: plant.waterRequirements,
+    bloomTime: plant.bloomTime,
+    bloomColor: plant.bloomColor,
+    wildlifeValue: plant.wildlifeValue,
+    whyItWorks: rec.whyItWorks || plant.description,
+    location: rec.location || '',
+    whenToBuy: PLANTING_SEASON_BY_TYPE[plant.type],
+    howToPlant: PLANTING_INSTRUCTIONS_BY_TYPE[plant.type],
+    care: plant.careTips,
+  };
+}
+
+function enrichStructuredAnalysis(structured: Record<string, any> | null): Record<string, any> | null {
+  if (!structured?.recommendations) return structured;
+  const recommendations = structured.recommendations
+    .map((r: any) => enrichRecommendation(r))
+    .filter((r: any): r is Record<string, any> => r !== null);
+  return { ...structured, recommendations };
+}
 
 const getClient = () => {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -20,9 +68,21 @@ router.post('/analyze', upload.single('image'), async (req: Request, res: Respon
     return res.status(400).json({ error: 'No image provided' });
   }
 
-  const { location, plantName, plantScientific } = req.body;
+  const { location, plantName, plantScientific, sunClassification, sunHoursOfSun, yardStyles, adjustments } = req.body;
   const imageBase64 = req.file.buffer.toString('base64');
   const mimeType = req.file.mimetype as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+
+  const sunContext = sunClassification
+    ? `\n\nMEASURED SUN DATA (from the exact property address, calculated from real solar geometry — treat this as ground truth for the site's overall sun exposure classification): this property receives approximately ${sunHoursOfSun} hours of direct sun today and is classified as "${sunClassification}". Use the photo to identify localized shade from specific visible obstructions (trees, structures, fences), but do not contradict this measured overall classification unless the photo clearly shows a small shaded pocket within an otherwise sunny property.`
+    : '';
+
+  const styleContext = yardStyles
+    ? `\n\nThe homeowner is going for the following yard style(s): ${yardStyles}. Prioritize your site assessment, design concept, and plant choices (from the catalog below) to support this goal. Note: the plant catalog contains native ornamental plants only, no food crops — if "Fruit / Vegetable" is among the styles, address it through placement guidance in landscapeOpportunities/designConcept (e.g., suggesting a sunny bed location and companion native pollinator plantings to support a food garden) rather than substituting edible crops into the "recommendations" list.`
+    : '';
+
+  const adjustmentContext = adjustments
+    ? `\n\nThe homeowner reviewed a previous set of recommendations and asked for this adjustment: "${adjustments}". Factor this into your new site assessment, design concept, and plant choices while still following all other instructions and choosing only from the catalog below.`
+    : '';
 
   try {
     const client = getClient();
@@ -42,7 +102,10 @@ router.post('/analyze', upload.single('image'), async (req: Request, res: Respon
          5. **Care Timeline**: Key maintenance tasks for the first 3 years
 
          Be specific about placement, spacing, and visual impact.`
-      : `You are a professional landscape architect. Analyze this photo of a yard/house exterior${location ? ` located in ${location}` : ''}.
+      : `You are a professional landscape architect. Analyze this photo of a yard/house exterior${location ? ` located in ${location}` : ''}.${sunContext}${styleContext}${adjustmentContext}
+
+AVAILABLE NATIVE PLANTS — you must choose your 5 recommendations ONLY from this exact list, using the "id" value verbatim (do not invent plants or ids outside this list):
+${buildCatalogPromptList()}
 
 Respond with ONLY a single valid JSON object (no markdown code fences, no commentary before or after) matching exactly this shape:
 
@@ -52,14 +115,9 @@ Respond with ONLY a single valid JSON object (no markdown code fences, no commen
   "currentPlants": "string - identification of any existing plants/trees visible",
   "recommendations": [
     {
-      "commonName": "string",
-      "scientificName": "string",
-      "type": "string - e.g. Tree, Shrub, Perennial, Fern, Groundcover",
-      "whyItWorks": "string - why this plant suits the site",
-      "whenToBuy": "string - best season/month to purchase and plant it",
-      "howToPlant": "string - planting instructions: hole size, spacing, depth, soil prep",
-      "care": "string - ongoing care: watering, pruning, fertilizing schedule",
-      "location": "string - exactly where on the property to place it"
+      "plantId": "string - must exactly match an id from the AVAILABLE NATIVE PLANTS list above",
+      "whyItWorks": "string - why this specific plant suits this site's conditions",
+      "location": "string - exactly where on this property to place it"
     }
   ],
   "designConcept": {
@@ -69,7 +127,7 @@ Respond with ONLY a single valid JSON object (no markdown code fences, no commen
   }
 }
 
-Provide exactly 5 native plant recommendations suited to this location and the visible site conditions. Be specific and practical enough that a homeowner could use "recommendations" as a shopping and planting checklist. Keep each field to 1-3 sentences so the full JSON object fits well within your response limit — completeness and valid JSON matter more than exhaustive detail.`;
+Choose exactly 5 plants from the list above that best match this site's sun/shade, soil, and moisture conditions as seen in the photo. Be specific about "location" and "whyItWorks" — a homeowner should understand exactly why each plant was chosen and where to put it. Keep each field to 1-3 sentences so the full JSON object fits well within your response limit.`;
 
     const response = await client.messages.create({
       model: 'claude-opus-4-8',
@@ -97,7 +155,7 @@ Provide exactly 5 native plant recommendations suited to this location and the v
 
     const textContent = response.content.find(c => c.type === 'text');
     const rawText = textContent?.type === 'text' ? textContent.text : '';
-    const structured = plantName ? null : parseStructuredAnalysis(rawText);
+    const structured = plantName ? null : enrichStructuredAnalysis(parseStructuredAnalysis(rawText));
     if (!plantName && !structured) {
       console.warn('AI analyze: failed to parse structured JSON', { stopReason: response.stop_reason, length: rawText.length });
     }
@@ -112,7 +170,7 @@ Provide exactly 5 native plant recommendations suited to this location and the v
         error: 'AI service not configured. Please add your ANTHROPIC_API_KEY to the backend .env file.',
         demo: true,
         analysis: generateDemoAnalysis(plantName, location),
-        structured: plantName ? null : generateDemoStructuredAnalysis(),
+        structured: plantName ? null : enrichStructuredAnalysis(generateDemoStructuredAnalysis()),
       });
     }
     console.error('AI analyze error:', error);
@@ -391,53 +449,28 @@ function generateDemoStructuredAnalysis(): Record<string, any> {
     currentPlants: 'A mature shade tree and a row of overgrown sheared shrubs along the foundation are visible; no other ornamental plantings identified.',
     recommendations: [
       {
-        commonName: 'Eastern Redbud',
-        scientificName: 'Cercis canadensis',
-        type: 'Tree',
+        plantId: 'eastern-redbud',
         whyItWorks: 'Understory native that thrives in filtered light and adds spring color at a manageable scale for a front yard.',
-        whenToBuy: 'Purchase and plant in early spring or fall while dormant, ideally as a container or balled-and-burlapped sapling from a native nursery.',
-        howToPlant: 'Dig a hole twice the width of the root ball and the same depth; backfill with native soil, water deeply, and mulch 2-3 inches, keeping mulch off the trunk.',
-        care: 'Water weekly for the first growing season, prune only to remove dead or crossing branches in late winter, no fertilizer needed once established.',
         location: 'Offset to one side of the entry walkway for seasonal color without blocking the door.',
       },
       {
-        commonName: 'Oakleaf Hydrangea',
-        scientificName: 'Hydrangea quercifolia',
-        type: 'Shrub',
+        plantId: 'oakleaf-hydrangea',
         whyItWorks: 'Shade-tolerant with four-season interest; makes an excellent foundation replacement for sheared non-native shrubs.',
-        whenToBuy: 'Best purchased and planted in early fall or early spring from a local nursery.',
-        howToPlant: 'Plant in a hole as deep as the root ball and 2x as wide, amend with compost, water in thoroughly, and mulch.',
-        care: 'Water regularly the first year, prune immediately after flowering only if needed, mulch annually to retain moisture.',
         location: 'Foundation bed along the front of the house, spaced 4-5 feet apart.',
       },
       {
-        commonName: 'Christmas Fern',
-        scientificName: 'Polystichum acrostichoides',
-        type: 'Fern',
+        plantId: 'christmas-fern',
         whyItWorks: 'Evergreen groundcover that handles dry shade under trees where grass struggles.',
-        whenToBuy: 'Plant in spring or fall; widely available as small potted plants.',
-        howToPlant: 'Space 18-24 inches apart, plant at the same depth as the container, water in well.',
-        care: 'Water during dry spells the first season; otherwise low-maintenance, no fertilizing required.',
         location: 'Underneath the mature shade tree canopy in the back yard.',
       },
       {
-        commonName: 'Foamflower',
-        scientificName: 'Tiarella cordifolia',
-        type: 'Perennial',
+        plantId: 'foamflower',
         whyItWorks: 'Spreading shade groundcover with delicate spring flowers that fills bare mulch areas.',
-        whenToBuy: 'Plant in spring or early fall from potted nursery stock.',
-        howToPlant: 'Plant 12-15 inches apart at the same depth as the pot, water thoroughly after planting.',
-        care: 'Keep evenly moist the first season; divide clumps every few years to maintain vigor.',
         location: 'Along the shaded walkway border as a low edging groundcover.',
       },
       {
-        commonName: 'Virginia Sweetspire',
-        scientificName: 'Itea virginica',
-        type: 'Shrub',
+        plantId: 'virginia-sweetspire',
         whyItWorks: 'Handles moist soil, offers fragrant blooms and vivid red fall color.',
-        whenToBuy: 'Purchase and plant in fall or early spring.',
-        howToPlant: 'Dig a hole twice as wide as the root ball, backfill and water deeply, mulch to retain moisture.',
-        care: 'Water regularly until established, prune after flowering to control size, tolerates wet spots well.',
         location: 'Low-lying side yard area that collects moisture after rain.',
       },
     ],

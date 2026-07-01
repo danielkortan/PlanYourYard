@@ -3,6 +3,7 @@ import {
   Sun, Droplets, TreePine, Bird, Bug, Gauge,
   ArrowRight, Sprout, Flower2
 } from 'lucide-react';
+import PlantImage from './PlantImage';
 
 interface PlantCardProps {
   plant: Plant;
@@ -63,8 +64,10 @@ export default function PlantCard({ plant, onClick, compact = false }: PlantCard
   return (
     <button
       onClick={() => onClick(plant)}
-      className="card p-4 text-left hover:border-forest-300 hover:shadow-md transition-all group w-full animate-fade-in"
+      className="card overflow-hidden text-left hover:border-forest-300 hover:shadow-md transition-all group w-full animate-fade-in"
     >
+      <PlantImage plantId={plant.id} commonName={plant.commonName} className="w-full h-32 object-cover" />
+      <div className="p-4">
       {/* Header */}
       <div className="flex items-start justify-between mb-2">
         <div className="flex-1 min-w-0">
@@ -155,6 +158,7 @@ export default function PlantCard({ plant, onClick, compact = false }: PlantCard
           </div>
         </div>
       )}
+      </div>
     </button>
   );
 }
