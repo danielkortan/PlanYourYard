@@ -156,6 +156,38 @@ function StructuredAnalysisView({ data }: { data: StructuredAnalysis }) {
   );
 }
 
+function looksLikeUnparsedJson(text: string): boolean {
+  return text.trim().startsWith('{');
+}
+
+function ResultBody({
+  mode,
+  result,
+  structured,
+  onRetry,
+}: {
+  mode: 'analyze' | 'visualize' | 'landscape';
+  result: string;
+  structured: StructuredAnalysis | null;
+  onRetry: () => void;
+}) {
+  if (structured) {
+    return <StructuredAnalysisView data={structured} />;
+  }
+  if (mode === 'analyze' && looksLikeUnparsedJson(result)) {
+    return (
+      <div className="text-sm text-gray-600">
+        <p className="mb-3">The AI response couldn't be formatted properly this time. Please try again.</p>
+        <button onClick={onRetry} className="btn-outline text-sm">
+          <RefreshCw className="w-4 h-4" />
+          Retry Analysis
+        </button>
+      </div>
+    );
+  }
+  return <MarkdownResult text={result} />;
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -195,8 +227,10 @@ function buildReportHtml(opts: {
     if (structured.designConcept) {
       bodyHtml += `<h2>Design Concept: ${escapeHtml(structured.designConcept.title)}</h2><p>${escapeHtml(structured.designConcept.description)}</p><ol>${(structured.designConcept.steps || []).map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ol>`;
     }
-  } else if (rawText) {
+  } else if (rawText && !rawText.trim().startsWith('{')) {
     bodyHtml += `<div class="raw">${escapeHtml(rawText).replace(/\n/g, '<br/>')}</div>`;
+  } else if (rawText) {
+    bodyHtml += `<p><em>This response couldn't be formatted properly. Please re-analyze and try exporting again.</em></p>`;
   }
 
   return `<!doctype html><html><head><meta charset="utf-8"/><title>${escapeHtml(title)}</title>
@@ -911,7 +945,7 @@ export default function VisualizePage() {
           )}
 
           <div className="bg-gray-50 rounded-xl p-4">
-            {structured ? <StructuredAnalysisView data={structured} /> : <MarkdownResult text={result} />}
+            <ResultBody mode={mode} result={result} structured={structured} onRetry={runAnalysis} />
           </div>
 
           <div className="flex gap-3 mt-4 pt-4 border-t border-gray-100">
@@ -1032,7 +1066,7 @@ export default function VisualizePage() {
             )}
 
             <div className="bg-gray-50 rounded-xl p-6">
-              {structured ? <StructuredAnalysisView data={structured} /> : <MarkdownResult text={result} />}
+              <ResultBody mode={mode} result={result} structured={structured} onRetry={runAnalysis} />
             </div>
           </div>
         </div>
