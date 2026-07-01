@@ -10,7 +10,7 @@ import {
   Maximize2, Download, Sun,
 } from 'lucide-react';
 import { Plant } from '../types';
-import PlantImage from '../components/PlantImage';
+import PlantImage, { getCachedPlantImageUrl } from '../components/PlantImage';
 
 interface PlantRecommendation {
   plantId: string;
@@ -142,44 +142,76 @@ function MarkdownResult({ text }: { text: string }) {
 function YardMapView({ existingPlantsMap, recommendations }: { existingPlantsMap: ExistingPlantMapItem[]; recommendations: PlantRecommendation[] }) {
   return (
     <div>
-      <div className="relative w-full aspect-[4/3] bg-gradient-to-b from-green-50 to-green-100 rounded-xl border border-gray-200 overflow-hidden">
-        <div className="absolute left-[22%] right-[22%] top-0 h-[15%] bg-gray-300 border-b-2 border-gray-400 flex items-center justify-center">
-          <span className="text-[11px] font-semibold text-gray-600 tracking-wide">HOUSE</span>
+      <div className="relative w-full aspect-[4/3] bg-gradient-to-b from-lime-100 via-green-100 to-green-200 rounded-2xl border border-gray-200 shadow-inner overflow-hidden">
+        {/* Property border */}
+        <div className="absolute inset-2 border-2 border-dashed border-green-900/10 rounded-lg pointer-events-none" />
+
+        {/* House */}
+        <div className="absolute left-[22%] right-[22%] top-0 h-[17%]">
+          {/* roof */}
+          <div
+            className="absolute left-1/2 -translate-x-1/2 -top-[9%] w-0 h-0"
+            style={{
+              borderLeft: '11% solid transparent',
+              borderRight: '11% solid transparent',
+              borderBottom: '9% solid #78716c',
+            }}
+          />
+          {/* walls */}
+          <div className="absolute inset-0 bg-stone-300 border-b-2 border-stone-400 shadow-sm flex items-end justify-center pb-1">
+            <span className="text-[10px] font-semibold text-stone-600 tracking-wide">HOUSE</span>
+          </div>
+          {/* door */}
+          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[8%] h-[45%] bg-stone-500 rounded-t-sm" />
         </div>
-        <div className="absolute left-1/2 -translate-x-1/2 top-[15%] bottom-0 w-[6%] bg-gray-200/70" />
+
+        {/* Walkway */}
+        <div className="absolute left-1/2 -translate-x-1/2 top-[17%] bottom-0 w-[7%] bg-stone-200 border-x border-stone-300/60" />
+
+        {/* Existing plants */}
         {existingPlantsMap.map((p, i) => (
           <div
             key={`existing-${i}`}
-            className="absolute -translate-x-1/2 -translate-y-1/2 group"
+            className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
             style={{ left: `${p.x}%`, top: `${p.y}%` }}
           >
-            <div className="w-3.5 h-3.5 rounded-full bg-gray-500 border-2 border-white shadow" />
-            <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 whitespace-nowrap text-[10px] bg-white border border-gray-200 rounded px-1.5 py-0.5 shadow opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-              {p.label}
+            <div className="w-7 h-7 rounded-full bg-stone-400 border-2 border-white shadow-md flex items-center justify-center">
+              <TreePine className="w-3.5 h-3.5 text-white" />
             </div>
+            <span className="mt-0.5 whitespace-nowrap text-[9px] bg-white/90 border border-gray-200 rounded px-1 py-0.5 shadow-sm text-gray-600 max-w-[80px] truncate">
+              {p.label}
+            </span>
           </div>
         ))}
+
+        {/* Recommended plants */}
         {recommendations.map((r, i) => (
           <div
             key={`rec-${i}`}
-            className="absolute -translate-x-1/2 -translate-y-1/2 group"
+            className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
             style={{ left: `${r.x}%`, top: `${r.y}%` }}
           >
-            <div className="w-6 h-6 rounded-full bg-forest-600 text-white text-[11px] font-bold flex items-center justify-center border-2 border-white shadow-md">
-              {i + 1}
+            <div className="relative w-9 h-9 rounded-full border-2 border-white shadow-md overflow-hidden bg-forest-100">
+              <PlantImage plantId={r.plantId} commonName={r.commonName} className="w-9 h-9 object-cover" />
+              <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-forest-600 text-white text-[9px] font-bold flex items-center justify-center border-2 border-white shadow">
+                {i + 1}
+              </div>
             </div>
-            <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 whitespace-nowrap text-[10px] bg-white border border-gray-200 rounded px-1.5 py-0.5 shadow opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+            <span className="mt-0.5 whitespace-nowrap text-[9px] bg-white/90 border border-forest-200 rounded px-1 py-0.5 shadow-sm text-forest-700 font-medium max-w-[90px] truncate">
               {r.commonName}
-            </div>
+            </span>
           </div>
         ))}
+
         <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 text-[10px] text-gray-400 tracking-wide">
           STREET / FRONT
         </div>
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-2 text-xs text-gray-600">
         <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-gray-500 inline-block border-2 border-white shadow" />
+          <span className="w-4 h-4 rounded-full bg-stone-400 inline-flex items-center justify-center border-2 border-white shadow">
+            <TreePine className="w-2.5 h-2.5 text-white" />
+          </span>
           Existing
         </span>
         <span className="flex items-center gap-1.5">
@@ -324,21 +356,31 @@ function escapeHtml(s: string): string {
 function buildYardMapHtml(existingPlantsMap: ExistingPlantMapItem[], recommendations: PlantRecommendation[]): string {
   const existingMarkers = (existingPlantsMap || []).map(p => `
     <div style="position:absolute; left:${p.x}%; top:${p.y}%; transform:translate(-50%,-50%); text-align:center;">
-      <div style="width:12px; height:12px; border-radius:50%; background:#6b7280; border:2px solid white; box-shadow:0 1px 3px rgba(0,0,0,.3); margin:0 auto;"></div>
-      <div style="font-size:9px; color:#4b5563; white-space:nowrap; margin-top:2px;">${escapeHtml(p.label)}</div>
+      <div style="width:22px; height:22px; border-radius:50%; background:#a8a29e; border:2px solid white; box-shadow:0 1px 3px rgba(0,0,0,.3); margin:0 auto; display:flex; align-items:center; justify-content:center; color:white; font-size:11px;">&#127794;</div>
+      <div style="font-size:9px; color:#57534e; white-space:nowrap; margin-top:2px; background:rgba(255,255,255,.85); border-radius:3px; padding:0 3px;">${escapeHtml(p.label)}</div>
     </div>`).join('');
-  const recMarkers = (recommendations || []).map((r, i) => `
+  const recMarkers = (recommendations || []).map((r, i) => {
+    const imgUrl = getCachedPlantImageUrl(r.plantId);
+    const thumb = imgUrl
+      ? `<img src="${imgUrl}" style="width:26px; height:26px; border-radius:50%; object-fit:cover; border:2px solid white; box-shadow:0 1px 3px rgba(0,0,0,.3); display:block; margin:0 auto;" />`
+      : `<div style="width:26px; height:26px; border-radius:50%; background:#dcfce7; border:2px solid white; box-shadow:0 1px 3px rgba(0,0,0,.3); margin:0 auto; display:flex; align-items:center; justify-content:center; color:#15803d; font-size:11px;">&#127807;</div>`;
+    return `
     <div style="position:absolute; left:${r.x}%; top:${r.y}%; transform:translate(-50%,-50%); text-align:center;">
-      <div style="width:22px; height:22px; border-radius:50%; background:#15803d; color:white; font-size:11px; font-weight:bold; display:flex; align-items:center; justify-content:center; border:2px solid white; box-shadow:0 1px 3px rgba(0,0,0,.3); margin:0 auto;">${i + 1}</div>
-      <div style="font-size:9px; color:#166534; white-space:nowrap; margin-top:2px;">${escapeHtml(r.commonName)}</div>
-    </div>`).join('');
+      <div style="position:relative; width:26px; margin:0 auto;">
+        ${thumb}
+        <div style="position:absolute; top:-4px; right:-4px; width:15px; height:15px; border-radius:50%; background:#15803d; color:white; font-size:9px; font-weight:bold; display:flex; align-items:center; justify-content:center; border:2px solid white;">${i + 1}</div>
+      </div>
+      <div style="font-size:9px; color:#166534; font-weight:600; white-space:nowrap; margin-top:2px; background:rgba(255,255,255,.85); border-radius:3px; padding:0 3px;">${escapeHtml(r.commonName)}</div>
+    </div>`;
+  }).join('');
   return `
-    <div style="position:relative; width:100%; max-width:500px; aspect-ratio:4/3; background:linear-gradient(to bottom, #f0fdf4, #dcfce7); border:1px solid #e5e7eb; border-radius:12px; overflow:hidden; margin:0.5rem 0;">
-      <div style="position:absolute; left:22%; right:22%; top:0; height:15%; background:#d1d5db; border-bottom:2px solid #9ca3af; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600; color:#4b5563;">HOUSE</div>
-      <div style="position:absolute; left:50%; top:15%; bottom:0; width:6%; transform:translateX(-50%); background:rgba(229,231,235,.7);"></div>
+    <div style="position:relative; width:100%; max-width:500px; aspect-ratio:4/3; background:linear-gradient(to bottom, #ecfccb, #bbf7d0); border:1px solid #e5e7eb; border-radius:16px; overflow:hidden; margin:0.5rem 0;">
+      <div style="position:absolute; left:2%; right:2%; top:2%; bottom:2%; border:2px dashed rgba(20,83,45,.1); border-radius:8px;"></div>
+      <div style="position:absolute; left:22%; right:22%; top:0; height:17%; background:#d6d3d1; border-bottom:2px solid #a8a29e; box-shadow:0 1px 2px rgba(0,0,0,.1); display:flex; align-items:flex-end; justify-content:center; font-size:10px; font-weight:600; color:#57534e; padding-bottom:3px;">HOUSE</div>
+      <div style="position:absolute; left:50%; top:17%; bottom:0; width:7%; transform:translateX(-50%); background:#e7e5e4;"></div>
       ${existingMarkers}
       ${recMarkers}
-      <div style="position:absolute; bottom:6px; left:50%; transform:translateX(-50%); font-size:9px; color:#9ca3af;">STREET / FRONT</div>
+      <div style="position:absolute; bottom:6px; left:50%; transform:translateX(-50%); font-size:9px; color:#78716c;">STREET / FRONT</div>
     </div>
     <p style="font-size:11px; color:#9ca3af; margin-top:0;">Approximate layout based on the AI's interpretation of the photo &mdash; not to scale or surveyed.</p>`;
 }

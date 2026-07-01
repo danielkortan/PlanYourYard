@@ -4,6 +4,11 @@ import { Leaf, TreePine } from 'lucide-react';
 
 const imageCache = new Map<string, { imageUrl: string | null; attribution: string | null }>();
 
+// Best-effort synchronous lookup for already-fetched images (e.g. for PDF export)
+export function getCachedPlantImageUrl(plantId: string): string | null {
+  return imageCache.get(plantId)?.imageUrl ?? null;
+}
+
 interface PlantImageProps {
   plantId: string;
   commonName: string;
