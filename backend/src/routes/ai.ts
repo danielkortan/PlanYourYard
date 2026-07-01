@@ -72,6 +72,24 @@ function enrichExistingPlant(item: { label?: string; x?: number; y?: number }): 
   };
 }
 
+// Validate the AI's estimate of how much of the map width the house spans,
+// falling back to a generic centered house if the estimate is missing/invalid
+function clampHouseBounds(houseXStart: any, houseXEnd: any): { xStart: number; xEnd: number } {
+  let start = typeof houseXStart === 'number' ? houseXStart : parseFloat(houseXStart);
+  let end = typeof houseXEnd === 'number' ? houseXEnd : parseFloat(houseXEnd);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return { xStart: 25, xEnd: 75 };
+  }
+  start = Math.min(90, Math.max(0, start));
+  end = Math.min(100, Math.max(10, end));
+  if (end - start < 20) {
+    const mid = (start + end) / 2;
+    start = Math.max(0, mid - 10);
+    end = Math.min(100, mid + 10);
+  }
+  return { xStart: start, xEnd: end };
+}
+
 function enrichStructuredAnalysis(structured: Record<string, any> | null): Record<string, any> | null {
   if (!structured?.recommendations) return structured;
   const recommendations = structured.recommendations
@@ -80,7 +98,8 @@ function enrichStructuredAnalysis(structured: Record<string, any> | null): Recor
   const existingPlantsMap = Array.isArray(structured.existingPlantsMap)
     ? structured.existingPlantsMap.map((i: any) => enrichExistingPlant(i)).filter((i: any): i is Record<string, any> => i !== null)
     : [];
-  return { ...structured, recommendations, existingPlantsMap };
+  const house = clampHouseBounds(structured.houseXStart, structured.houseXEnd);
+  return { ...structured, recommendations, existingPlantsMap, house };
 }
 
 const getClient = () => {
@@ -140,17 +159,22 @@ You will also produce a simple top-down map of the property using this coordinat
 - x ranges 0-100 (0 = left edge of the property, 100 = right edge)
 - y ranges 18-100 (the house occupies y 0-17, a band across the top of the map, so y=18 is the ground immediately in front of/beside the house and y=100 is the street/front edge closest to the viewer) — NEVER use a y value below 18, since that would place a marker on top of the house itself
 - Foundation plantings (right up against the house wall) should use y around 18-25; mid-yard plantings around y 30-65; plantings near the street/front edge around y 70-95
+- Also estimate "houseXStart" and "houseXEnd" (both 0-100): how much of the property's width the house itself actually spans left-to-right as seen in the photo. A house that fills most of the frame should be wide (e.g. 8-92); a house that's a smaller portion of a wide lot should be narrower (e.g. 30-70). Get this right — it's used to draw the house at the correct width and position.
 - Place each existing item and each recommendation at the (x, y) that best matches where it actually is (or should go) in the photo relative to the house and walkway
+
+Be EXHAUSTIVE in "existingPlantsMap": include a separate entry for every visually distinct plant, shrub, or tree you can make out in the photo, not just one or two — a densely planted foundation bed might have 8-12+ distinct entries (e.g. separate entries for each different shrub type/cluster, not one combined entry for "shrubs"). Every plant or tree you mention in "currentPlants" text must also have a corresponding entry in "existingPlantsMap" — the two must describe the same set of plants, never mention something in the text without also placing it on the map.
 
 Respond with ONLY a single valid JSON object (no markdown code fences, no commentary before or after) matching exactly this shape:
 
 {
   "siteAssessment": "string - sun exposure (full sun/part shade/shade areas), existing vegetation, soil type indicators",
   "landscapeOpportunities": "string - best areas for new plantings and why",
-  "currentPlants": "string - identification of any existing plants/trees visible",
+  "currentPlants": "string - identification of any existing plants/trees visible, matching every entry in existingPlantsMap",
+  "houseXStart": "number 0-100 - left edge of the house per the coordinate convention above",
+  "houseXEnd": "number 0-100 - right edge of the house per the coordinate convention above",
   "existingPlantsMap": [
     {
-      "label": "string - short name for an existing plant/tree/shrub visible in the photo, e.g. 'Mature Oak Tree' or 'Overgrown Foundation Shrubs'",
+      "label": "string - short specific name for one distinct existing plant/tree/shrub visible in the photo, e.g. 'Boxwood by Left Window' or 'Mature Oak Tree'",
       "x": "number 0-100 per the coordinate convention above",
       "y": "number 0-100 per the coordinate convention above"
     }
@@ -175,7 +199,7 @@ Choose exactly 5 plants from the list above that best match this site's sun/shad
 
     const response = await client.messages.create({
       model: 'claude-opus-4-8',
-      max_tokens: plantName ? 2000 : 4600,
+      max_tokens: plantName ? 2000 : 5400,
       messages: [
         {
           role: 'user',
@@ -490,10 +514,14 @@ function generateDemoStructuredAnalysis(): Record<string, any> {
   return {
     siteAssessment: 'This demo response simulates a property with a mix of full sun near the front lawn and part-shade under mature trees toward the back. Soil appears to be typical clay-loam common to the Mid-Atlantic region, with decent drainage.',
     landscapeOpportunities: 'The foundation bed along the front of the house and the shaded area under the tree canopy are both underused and would benefit from layered native plantings instead of turf.',
-    currentPlants: 'A mature shade tree and a row of overgrown sheared shrubs along the foundation are visible; no other ornamental plantings identified.',
+    currentPlants: 'A mature shade tree in the back-left of the yard, and along the foundation: a row of overgrown boxwood shrubs left of the door, a clipped yew to the right of the door, and a smaller juniper near the right corner of the house.',
+    houseXStart: 12,
+    houseXEnd: 88,
     existingPlantsMap: [
       { label: 'Mature Shade Tree', x: 20, y: 45 },
-      { label: 'Overgrown Foundation Shrubs', x: 50, y: 20 },
+      { label: 'Overgrown Boxwood (Left of Door)', x: 38, y: 20 },
+      { label: 'Clipped Yew (Right of Door)', x: 58, y: 20 },
+      { label: 'Juniper (Right Corner)', x: 80, y: 22 },
     ],
     recommendations: [
       {
