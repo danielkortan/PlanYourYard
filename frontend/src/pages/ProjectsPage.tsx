@@ -7,6 +7,7 @@ import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
+import { formatDate } from '../lib/dates';
 
 // Fix Leaflet default icon
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -453,7 +454,7 @@ export default function ProjectsPage() {
                     )}
                     <span className="flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5" />
-                      {new Date(project.created_at).toLocaleDateString()}
+                      {formatDate(project.created_at)}
                     </span>
                   </div>
                   <div className="flex items-center gap-1">
