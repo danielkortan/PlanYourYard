@@ -3,6 +3,7 @@ import { Shield, Trash2, UserCheck, UserX, RefreshCw, Folder, Search, ChevronLef
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
+import { formatDate } from '../lib/dates';
 
 interface AdminUser {
   id: number;
@@ -185,7 +186,7 @@ export default function AdminPage() {
                       </span>
                     </td>
                     <td className="px-5 py-3.5 text-sm text-gray-400 hidden md:table-cell">
-                      {new Date(user.created_at).toLocaleDateString()}
+                      {formatDate(user.created_at)}
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center justify-end gap-2">
