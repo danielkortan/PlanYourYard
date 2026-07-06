@@ -30,23 +30,17 @@ services:
     name: plan-your-yard-stage
     runtime: node
     region: oregon
-    plan: starter   # persistent disk requires starter; drop the disk block to run staging on the free plan (data resets each deploy)
+    plan: free   # no persistent disk on the free plan: staging DB and uploads reset on every deploy
     branch: stage
     buildCommand: npm install && npm run build
     startCommand: node backend/dist/index.js
-    disk:
-      name: planyard-stage-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
-      - key: DB_PATH
-        value: /var/data/planyard.db
-      - key: UPLOADS_DIR
-        value: /var/data/uploads
+      # DB_PATH and UPLOADS_DIR intentionally unset — the backend falls back to
+      # project-local paths, which are writable but ephemeral on Render
       - key: JWT_SECRET
         sync: false   # Set in the Render dashboard — use a different secret than production
       - key: ANTHROPIC_API_KEY
